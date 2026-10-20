@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+settings.json
+state.json
+latest_digest.json
+*.log
