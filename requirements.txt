@@ -1,0 +1,2 @@
+keyring>=25.0.0
+winotify>=1.1.0; platform_system == "Windows"
