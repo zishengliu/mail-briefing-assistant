@@ -1301,7 +1301,7 @@ class MailBriefingApp:
         wrapper = ttk.Frame(self.root, padding=14)
         wrapper.pack(fill="both", expand=True)
         ttk.Label(wrapper, text="邮件助手", font=(UI_FONT, 18, "bold")).pack(anchor="w")
-        ttk.Label(wrapper, text="汇总 Gmail、QQ 邮箱与清华邮箱的新邮件；本机分类，不上传邮件内容。", foreground="#555").pack(anchor="w", pady=(2, 12))
+        ttk.Label(wrapper, text="汇总多个 IMAP 邮箱的当日新邮件；本机分类与摘要，不上传邮件内容。", foreground="#555").pack(anchor="w", pady=(2, 12))
         self.notebook = ttk.Notebook(wrapper)
         self.notebook.pack(fill="both", expand=True)
         self.settings_tab = ttk.Frame(self.notebook, padding=12)
@@ -1318,11 +1318,29 @@ class MailBriefingApp:
         ttk.Button(bottom, text="立即检查新邮件", command=self.check_now).pack(side="right")
 
     def build_settings_tab(self):
-        ttk.Label(self.settings_tab, text="账号设置", font=(UI_FONT, 11, "bold")).pack(anchor="w")
+        outer = ttk.Frame(self.settings_tab)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        content = ttk.Frame(canvas, padding=(0, 0, 8, 4))
+        canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(canvas_window, width=event.width))
+        self.settings_content = content
+        self.settings_canvas = canvas
+
+        ttk.Label(content, text="邮箱账户", font=(UI_FONT, 12, "bold")).pack(anchor="w")
+        ttk.Label(content, text="可添加多个主流邮箱，也支持填写其他 IMAP SSL 服务器。",
+                  foreground="#555").pack(anchor="w", pady=(2, 8))
         for account in self.settings["accounts"]:
-            provider = next(p for p in PROVIDERS if p["id"] == account["id"])
-            card = ttk.LabelFrame(self.settings_tab, text=f"{account['name']} · {account['host']}:{account['port']}", padding=8)
-            card.pack(fill="x", pady=5)
+            provider_id = account.get("provider_id", account.get("id"))
+            provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
+            help_text = provider["help"] if provider else "自定义 IMAP SSL 邮箱。请向邮箱服务商确认 IMAP 主机、端口、授权码和网页版地址。"
+            card = ttk.LabelFrame(content, text=f"{account['name']} · {account['host']}:{account['port']}", padding=8)
+            card.pack(fill="x", pady=4)
             enabled = tk.BooleanVar(value=account.get("enabled", True))
             email_var = tk.StringVar(value=account.get("email", ""))
             password_var = tk.StringVar()
@@ -1334,20 +1352,151 @@ class MailBriefingApp:
             ttk.Entry(card, textvariable=email_var, width=34).grid(row=0, column=2, sticky="ew", padx=5)
             ttk.Label(card, text="客户端密码 / 授权码").grid(row=1, column=1, sticky="e", pady=(5, 0))
             ttk.Entry(card, textvariable=password_var, width=34, show="•").grid(row=1, column=2, sticky="ew", padx=5, pady=(5, 0))
-            ttk.Label(card, text=provider["help"], wraplength=690, foreground="#555").grid(row=2, column=1, columnspan=2, sticky="w", padx=5, pady=(5, 0))
+            ttk.Label(card, text=help_text, wraplength=690, foreground="#555").grid(row=2, column=1, columnspan=2, sticky="w", padx=5, pady=(5, 0))
             card.columnconfigure(2, weight=1)
-        timing = ttk.LabelFrame(self.settings_tab, text="每日晨报", padding=8)
-        timing.pack(fill="x", pady=(7, 4))
+
+        timing = ttk.LabelFrame(content, text="每日提醒", padding=8)
+        timing.pack(fill="x", pady=(8, 4))
         ttk.Label(timing, text="通知时间（24 小时制）").grid(row=0, column=0, sticky="w")
         self.time_var = tk.StringVar(value=self.settings.get("daily_time", "08:00"))
         ttk.Entry(timing, textvariable=self.time_var, width=10).grid(row=0, column=1, sticky="w", padx=8)
-        ttk.Label(timing, text="例如 08:00。安装启动任务后，电脑登录且助手运行时会按此时间检查。", foreground="#555").grid(row=0, column=2, sticky="w")
-        row = ttk.Frame(self.settings_tab)
+        ttk.Label(timing, text="例如 08:00。需保持电脑开机、用户登录且助手运行。", foreground="#555").grid(row=0, column=2, sticky="w")
+
+        row = ttk.Frame(content)
         row.pack(fill="x", pady=(8, 0))
         ttk.Button(row, text="保存设置", command=self.save).pack(side="left")
-        ttk.Button(row, text="测试已启用邮箱", command=self.test_all).pack(side="left", padx=8)
-        ttk.Button(row, text="查看官方邮箱设置说明", command=lambda: webbrowser.open("https://mail.tsinghua.edu.cn/coremail/help/clientoption.jsp?locale=zh_CN")).pack(side="right")
-        ttk.Label(self.settings_tab, text="密码仅保存在本机系统凭据库；设置文件只保存邮箱地址和同步状态。", foreground="#166534").pack(anchor="w", pady=(10, 0))
+        ttk.Button(row, text="测试邮箱连接", command=self.test_all).pack(side="left", padx=8)
+        ttk.Button(row, text="添加邮箱…", command=self.add_account_dialog).pack(side="left", padx=(0, 8))
+        ttk.Button(row, text="邮箱设置帮助", command=lambda: webbrowser.open("https://support.google.com/mail/answer/7126229")).pack(side="right")
+        ttk.Label(content, text="密码仅保存在本机系统凭据库；设置文件不保存明文密码。",
+                  foreground="#166534").pack(anchor="w", pady=(10, 0))
+
+    def rebuild_settings_tab(self):
+        for child in self.settings_tab.winfo_children():
+            child.destroy()
+        self.account_vars = {}
+        self.password_vars = {}
+        self.email_vars = {}
+        self.enabled_vars = {}
+        self.build_settings_tab()
+
+    def add_account_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("添加邮箱 · 邮件助手")
+        dialog.geometry("610x430")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        labels = [provider["name"] for provider in PROVIDERS] + ["自定义 IMAP 邮箱"]
+        provider_by_name = {provider["name"]: provider for provider in PROVIDERS}
+        custom_label = "自定义 IMAP 邮箱"
+        form = ttk.Frame(dialog, padding=16)
+        form.pack(fill="both", expand=True)
+
+        provider_var = tk.StringVar(value=PROVIDERS[0]["name"])
+        name_var = tk.StringVar(value=PROVIDERS[0]["name"])
+        host_var = tk.StringVar(value=PROVIDERS[0]["host"])
+        port_var = tk.StringVar(value=str(PROVIDERS[0]["port"]))
+        url_var = tk.StringVar(value=PROVIDERS[0]["url"])
+        email_var = tk.StringVar()
+        secret_var = tk.StringVar()
+        help_var = tk.StringVar(value=PROVIDERS[0]["help"])
+
+        ttk.Label(form, text="选择邮箱服务").grid(row=0, column=0, sticky="e", padx=(0, 8), pady=5)
+        provider_box = ttk.Combobox(form, textvariable=provider_var, values=labels, state="readonly", width=42)
+        provider_box.grid(row=0, column=1, sticky="ew", pady=5)
+
+        fields = [
+            ("显示名称", name_var, False),
+            ("IMAP SSL 主机", host_var, False),
+            ("端口", port_var, False),
+            ("网页版地址（可选）", url_var, False),
+            ("完整邮箱地址", email_var, False),
+            ("客户端密码 / 授权码", secret_var, True),
+        ]
+        for index, (label, var, secret) in enumerate(fields, start=1):
+            ttk.Label(form, text=label).grid(row=index, column=0, sticky="e", padx=(0, 8), pady=5)
+            ttk.Entry(form, textvariable=var, width=45, show="•" if secret else "").grid(row=index, column=1, sticky="ew", pady=5)
+
+        ttk.Label(form, textvariable=help_var, wraplength=540, foreground="#555").grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
+        ttk.Label(form, text="仅支持 IMAP SSL + 客户端密码/授权码；需要 OAuth2 的邮箱暂不支持直接连接。",
+                  wraplength=540, foreground="#9A3412").grid(row=8, column=0, columnspan=2, sticky="w")
+
+        previous_auto_name = [name_var.get()]
+
+        def provider_changed(event=None):
+            selected = provider_var.get()
+            if selected == custom_label:
+                host_var.set("")
+                port_var.set("993")
+                url_var.set("")
+                help_var.set("向邮箱服务商确认 IMAP SSL 主机与端口。请只连接你有权访问的邮箱。")
+                if name_var.get() in previous_auto_name or not name_var.get():
+                    name_var.set("")
+                previous_auto_name.clear()
+                return
+            provider = provider_by_name[selected]
+            host_var.set(provider["host"])
+            port_var.set(str(provider["port"]))
+            url_var.set(provider["url"])
+            help_var.set(provider["help"])
+            if name_var.get() in previous_auto_name or not name_var.get():
+                name_var.set(provider["name"])
+            previous_auto_name[:] = [provider["name"]]
+
+        provider_box.bind("<<ComboboxSelected>>", provider_changed)
+
+        def save_new_account():
+            name = name_var.get().strip()
+            host = host_var.get().strip()
+            email_addr = email_var.get().strip()
+            url = url_var.get().strip()
+            try:
+                port = int(port_var.get().strip())
+                if not 1 <= port <= 65535:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("端口错误", "端口必须是 1–65535 的整数。", parent=dialog)
+                return
+            if not name or not host or "@" not in email_addr:
+                messagebox.showerror("信息不完整", "请填写显示名称、IMAP 主机和完整邮箱地址。", parent=dialog)
+                return
+            secret = secret_var.get()
+            if not secret:
+                messagebox.showerror("缺少授权信息", "请填写客户端密码或授权码。", parent=dialog)
+                return
+
+            provider = provider_by_name.get(provider_var.get())
+            provider_id = provider["id"] if provider else "custom"
+            settings = load_settings()
+            used_ids = {str(account.get("id")) for account in settings["accounts"]}
+            account_id = provider_id
+            if account_id in used_ids or provider_id == "custom":
+                account_id = f"{provider_id}-{uuid.uuid4().hex[:10]}"
+            new_account = {
+                "id": account_id,
+                "provider_id": provider_id,
+                "name": name,
+                "host": host,
+                "port": port,
+                "url": url,
+                "email": email_addr,
+                "enabled": True,
+            }
+            try:
+                set_secret(account_id, secret)
+                settings["accounts"].append(new_account)
+                save_settings(settings)
+            except Exception as exc:
+                messagebox.showerror("添加失败", str(exc), parent=dialog)
+                return
+            self.settings = settings
+            dialog.destroy()
+            self.rebuild_settings_tab()
+            self.status.set(f"已添加邮箱：{name}。请测试连接并保存其他更改。")
+
+
 
     def build_inbox_tab(self):
         toolbar = ttk.Frame(self.inbox_tab)
