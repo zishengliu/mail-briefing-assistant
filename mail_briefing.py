@@ -988,17 +988,21 @@ class MailBriefingWidget:
             ).pack(fill="x", padx=2, pady=2)
 
         category_colors = {
-            "紧急/待处理": "#B42318",
-            "课程与学术": "#175CD3",
-            "求职与实习": "#067647",
+            "需尽快处理": "#B42318",
+            "日程与会议": "#175CD3",
+            "课程与学术": "#067647",
+            "求职与实习": "#6941C6",
             "账单与账户": "#B54708",
-            "订阅与通知": "#6941C6",
-            "个人与其他": "#667085",
+            "通知与订阅": "#667085",
+            "其他往来": "#667085",
         }
         account_colors = {
             "gmail": ("#EAF2FF", "#1D4ED8"),
             "qq": ("#E8F7F2", "#067647"),
             "tsinghua": ("#FFF3E8", "#B54708"),
+            "outlook": ("#EAF2FF", "#175CD3"),
+            "yahoo": ("#F4EBFF", "#6941C6"),
+            "icloud": ("#EFF8FF", "#026AA2"),
         }
 
         for mail in mails[:100]:
@@ -1020,12 +1024,15 @@ class MailBriefingWidget:
             top.pack(fill="x", padx=10, pady=(8, 3))
 
             account_id = str(mail.get("account_id", ""))
-            badge_bg, badge_fg = account_colors.get(account_id, ("#EEF2F6", "#475467"))
+            provider_id = str(mail.get("provider_id", account_id))
+            badge_bg, badge_fg = account_colors.get(provider_id, ("#EEF2F6", "#475467"))
             account_name = mail.get("account_name") or {
-                "gmail": "Gmail",
-                "qq": "QQ 邮箱",
-                "tsinghua": "清华大学邮箱",
-            }.get(account_id, "其他邮箱")
+                "gmail": "Gmail", "qq": "QQ 邮箱", "tsinghua": "清华大学邮箱",
+                "outlook": "Outlook", "yahoo": "Yahoo", "icloud": "iCloud",
+                "163": "网易 163", "126": "网易 126", "sina": "新浪邮箱",
+                "exmail": "腾讯企业邮箱", "aliyun": "阿里云邮箱",
+                "zoho": "Zoho Mail", "fastmail": "Fastmail",
+            }.get(provider_id, "其他邮箱")
             account_label = tk.Label(
                 top, text=account_name, bg=badge_bg, fg=badge_fg,
                 font=(UI_FONT, 8, "bold"),
@@ -1039,7 +1046,15 @@ class MailBriefingWidget:
                 fg=category_colors.get(category, self.MUTED),
                 font=(UI_FONT, 8, "bold"), cursor="hand2",
             )
-            category_label.pack(side="left", padx=(8, 0))
+            category_label.pack(side="left", padx=(7, 0))
+
+            priority = mail.get("priority", "普通")
+            priority_color = {"高": "#B42318", "中": "#B54708", "普通": "#667085"}.get(priority, "#667085")
+            priority_label = tk.Label(
+                top, text=f"{priority}优先级", bg=self.ROW, fg=priority_color,
+                font=(UI_FONT, 8), cursor="hand2",
+            )
+            priority_label.pack(side="left", padx=(7, 0))
 
             date_label = tk.Label(
                 top, text=date_text, bg=self.ROW, fg=self.MUTED,
@@ -1070,8 +1085,8 @@ class MailBriefingWidget:
             )
             preview_label.pack(fill="x", padx=10, pady=(0, 9))
 
-            open_callback = lambda event, selected_account=account_id: self.open_webmail(selected_account)
-            for part in (row, top, account_label, category_label, date_label, sender_label, subject_label, preview_label):
+            open_callback = lambda event, selected_mail=mail: show_mail_detail(self.root, selected_mail, self.open_webmail)
+            for part in (row, top, account_label, category_label, priority_label, date_label, sender_label, subject_label, preview_label):
                 part.bind("<Button-1>", open_callback)
 
         for error in self.last_errors:
@@ -1149,8 +1164,15 @@ class MailBriefingWidget:
             account = next((a for a in settings["accounts"] if a.get("enabled") and a.get("email")), None)
         else:
             account = next((a for a in settings["accounts"] if a.get("id") == account_id), None)
-        provider = next((p for p in PROVIDERS if account and p["id"] == account.get("id")), PROVIDERS[0])
-        webbrowser.open(provider["url"])
+        if account and account.get("url"):
+            webbrowser.open(account["url"])
+            return
+        provider_id = account.get("provider_id", account.get("id")) if account else ""
+        provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
+        if provider and provider.get("url"):
+            webbrowser.open(provider["url"])
+        else:
+            messagebox.showinfo("未设置网页版地址", "请在添加邮箱时填写该邮箱的网页版登录地址。")
 
     def quit(self):
         self._cancel_auto_collapse()
@@ -1212,6 +1234,13 @@ class MailBriefingWidget:
     def _tick(self):
         try:
             now = datetime.now()
+            visible_mails = today_only(self.last_mails, now.astimezone().date())
+            if len(visible_mails) != len(self.last_mails):
+                self.last_mails = visible_mails
+                self._render_details()
+            if str(self.latest_digest.get("generated_at", ""))[:10] != now.date().isoformat():
+                self.last_errors = []
+            self._update_summary()
             settings = load_settings()
             state = load_state()
             minute_key = now.strftime("%Y-%m-%d %H:%M")
@@ -1338,7 +1367,7 @@ class MailBriefingApp:
             self.tree.column(col, width=widths[col], minwidth=75, anchor="w")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self.show_selected_preview)
-        self.tree.bind("<Double-1>", lambda event: self.open_webmail())
+        self.tree.bind("<Double-1>", self.open_selected_message)
 
         detail = ttk.LabelFrame(self.inbox_tab, text="邮件摘要", padding=9)
         detail.pack(fill="x", pady=(8, 0))
@@ -1377,14 +1406,14 @@ class MailBriefingApp:
 
     def render_saved_digest(self):
         state = load_state()
-        pending = [_restore_mail(item) for item in state.get("pending_digest", [])]
+        pending = today_only([_restore_mail(item) for item in state.get("pending_digest", [])])
         if pending:
             self.show_results(pending, [], title="当前待晨报邮件", warn_errors=False)
             self.summary.set("当前待晨报邮件（这些邮件会在设定时间汇总通知）：\n" + self.summary.get())
             return
         digest = load_digest()
         if digest:
-            mails = [_restore_mail(item) for item in digest.get("mails", [])]
+            mails = today_only([_restore_mail(item) for item in digest.get("mails", [])])
             errors = digest.get("errors", [])
             self.show_results(mails, errors, title="上次晨报", warn_errors=False)
             generated_at = digest.get("generated_at", "时间未知")
@@ -1467,7 +1496,7 @@ class MailBriefingApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def show_results(self, mails, errors, title="本次新邮件", warn_errors=True):
-        self.recent_mails = list(mails)
+        self.recent_mails = today_only(list(mails))
         for item in self.tree.get_children():
             self.tree.delete(item)
         counts = {c: 0 for c in CATEGORY_ORDER}
@@ -1495,23 +1524,39 @@ class MailBriefingApp:
         if errors and warn_errors:
             messagebox.showwarning("部分邮箱检查失败", "\n".join(errors))
 
-    def open_webmail(self):
+    def open_selected_message(self, event=None):
         selected = self.tree.selection()
+        if not selected:
+            return
+        children = list(self.tree.get_children())
+        try:
+            mail = self.recent_mails[children.index(selected[0])]
+        except (ValueError, IndexError):
+            return
+        show_mail_detail(self.root, mail, self.open_webmail)
+
+    def open_webmail(self, account_id=None):
+        if account_id:
+            account = next((a for a in self.settings["accounts"] if a.get("id") == account_id), None)
+        else:
+            selected = self.tree.selection()
         account_id = None
-        if selected:
-            values = self.tree.item(selected[0], "values")
-            account_name = values[1] if len(values) > 1 else ""
-            for a in self.settings["accounts"]:
-                if a["name"] == account_name:
-                    account_id = a["id"]
-                    break
-        if account_id is None:
-            for a in self.settings["accounts"]:
-                if a.get("enabled") and a.get("email"):
-                    account_id = a["id"]
-                    break
-        provider = next((p for p in PROVIDERS if p["id"] == account_id), PROVIDERS[0])
-        webbrowser.open(provider["url"])
+            account = None
+            if selected:
+                values = self.tree.item(selected[0], "values")
+                account_name = values[1] if len(values) > 1 else ""
+                account = next((a for a in self.settings["accounts"] if a["name"] == account_name), None)
+            if account is None:
+                account = next((a for a in self.settings["accounts"] if a.get("enabled") and a.get("email")), None)
+        if account and account.get("url"):
+            webbrowser.open(account["url"])
+        else:
+            provider_id = account.get("provider_id", account.get("id")) if account else ""
+            provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
+            if provider and provider.get("url"):
+                webbrowser.open(provider["url"])
+            else:
+                messagebox.showinfo("未设置网页版地址", "请在添加邮箱时填写该邮箱的网页版登录地址。")
 
 
 def main():
