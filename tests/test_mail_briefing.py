@@ -67,6 +67,31 @@ class MailAssistantTests(unittest.TestCase):
         filtered = app.today_only([current, yesterday, unknown], today)
         self.assertEqual([item["subject"] for item in filtered], ["today"])
 
+    def test_connection_recovery_advice_explains_authentication_fix(self):
+        account = {
+            "id": "tsinghua", "provider_id": "tsinghua",
+            "name": "清华大学邮箱", "email": "test@tsinghua.edu.cn",
+        }
+        guidance = app.connection_recovery_advice(account, "LOGIN failed: AUTHENTICATIONFAILED")
+        self.assertIn("客户端专用密码/授权码", guidance)
+        self.assertIn("开启 IMAP", guidance)
+        self.assertIn("清华大学邮箱：连接失败", guidance)
+
+    def test_mailbox_status_labels_show_counts_and_connection_failures(self):
+        accounts = [
+            {"id": "gmail", "name": "Gmail", "email": "test@gmail.com", "enabled": True},
+            {"id": "tsinghua", "name": "清华大学邮箱", "email": "test@tsinghua.edu.cn", "enabled": True},
+            {"id": "qq", "name": "QQ 邮箱", "email": "test@qq.com", "enabled": True},
+            {"id": "off", "name": "已停用邮箱", "email": "off@example.com", "enabled": False},
+        ]
+        mails = [
+            {"account_id": "gmail"}, {"account_id": "gmail"}, {"account_id": "qq"},
+        ]
+        errors = ["清华大学邮箱：连接失败（timeout）\\n恢复建议：重新测试连接。"]
+        labels = app.mailbox_status_labels(mails, accounts, errors)
+        self.assertEqual(labels, ["Gmail 2 封", "清华大学邮箱 连接异常", "QQ 邮箱 1 封"])
+        self.assertFalse(any("已停用邮箱" in label for label in labels))
+
     def test_daily_schedule_defaults_to_eight_and_seventeen(self):
         settings = app.default_settings()
         self.assertEqual(app.configured_daily_times(settings), ["08:00", "17:00"])
