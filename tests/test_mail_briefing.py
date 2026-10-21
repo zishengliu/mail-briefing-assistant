@@ -81,6 +81,7 @@ class MailAssistantTests(unittest.TestCase):
                     "port": 993,
                     "url": "https://mail.example.com/",
                     "email": "me@example.com",
+                    "username": "imap-login",
                     "enabled": True,
                 })
                 app.save_settings(settings)
@@ -89,6 +90,7 @@ class MailAssistantTests(unittest.TestCase):
                 self.assertEqual(custom["host"], "imap.example.com")
                 self.assertEqual(custom["port"], 993)
                 self.assertEqual(custom["url"], "https://mail.example.com/")
+                self.assertEqual(custom["username"], "imap-login")
         finally:
             app.SETTINGS_PATH = old_path
 
