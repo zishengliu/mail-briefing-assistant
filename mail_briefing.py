@@ -17,6 +17,8 @@ import webbrowser
 from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
+from html.parser import HTMLParser
+import uuid
 from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
 import tkinter as tk
@@ -28,15 +30,125 @@ except ImportError:
     keyring = None
 
 APP_TITLE = "邮件助手"
+UI_FONT = "PingFang SC" if sys.platform == "darwin" else (UI_FONT if os.name == "nt" else "Noto Sans CJK SC")
 SERVICE_NAME = "MailBriefingAssistant"
 PROVIDERS = [
     {"id": "gmail", "name": "Gmail", "host": "imap.gmail.com", "port": 993,
-     "url": "https://mail.google.com/mail/u/0/#inbox", "help": "Gmail 建议使用 Google 官方授权；若使用 IMAP 应用密码，通常需要开启两步验证。"},
+     "url": "https://mail.google.com/mail/u/0/#inbox",
+     "help": "填写 Google 应用专用密码；若账号不支持应用专用密码，当前版本暂不支持 Gmail OAuth 登录。"},
     {"id": "qq", "name": "QQ 邮箱", "host": "imap.qq.com", "port": 993,
-     "url": "https://mail.qq.com/", "help": "请在邮箱设置中开启 IMAP/SMTP 服务，并填写生成的授权码（不是网页登录密码）。"},
-    {"id": "tsinghua", "name": "清华大学邮箱（学生）", "host": "mails.tsinghua.edu.cn", "port": 993,
-     "url": "https://mails.tsinghua.edu.cn/", "help": "学生邮箱 IMAP：mails.tsinghua.edu.cn:993；请填写网页版邮箱设置中的客户端专用密码。"},
+     "url": "https://mail.qq.com/",
+     "help": "先在邮箱设置中开启 IMAP 服务，并填写生成的授权码。"},
+    {"id": "tsinghua", "name": "清华大学邮箱", "host": "mails.tsinghua.edu.cn", "port": 993,
+     "url": "https://mails.tsinghua.edu.cn/",
+     "help": "请填写清华邮箱设置中的客户端专用密码。"},
+    {"id": "outlook", "name": "Outlook / Hotmail", "host": "outlook.office365.com", "port": 993,
+     "url": "https://outlook.live.com/mail/",
+     "help": "注意：部分 Outlook / Microsoft 365 账号只允许 OAuth2，当前版本尚不支持 OAuth2；仅在账号允许 IMAP 密码/应用密码登录时可用。"},
+    {"id": "yahoo", "name": "Yahoo Mail", "host": "imap.mail.yahoo.com", "port": 993,
+     "url": "https://mail.yahoo.com/",
+     "help": "通常需要在 Yahoo 账号安全设置中生成应用专用密码。"},
+    {"id": "icloud", "name": "iCloud Mail", "host": "imap.mail.me.com", "port": 993,
+     "url": "https://www.icloud.com/mail/",
+     "help": "使用 Apple 账号生成的 App 专用密码；IMAP 用户名通常为完整 iCloud 邮箱地址。"},
+    {"id": "163", "name": "网易 163 邮箱", "host": "imap.163.com", "port": 993,
+     "url": "https://mail.163.com/",
+     "help": "先在邮箱设置中开启 IMAP/SMTP 服务，并使用客户端授权码。"},
+    {"id": "126", "name": "网易 126 邮箱", "host": "imap.126.com", "port": 993,
+     "url": "https://mail.126.com/",
+     "help": "先在邮箱设置中开启 IMAP/SMTP 服务，并使用客户端授权码。"},
+    {"id": "sina", "name": "新浪邮箱", "host": "imap.sina.com", "port": 993,
+     "url": "https://mail.sina.com.cn/",
+     "help": "请确认邮箱已开启 IMAP 服务，并按账号设置使用客户端授权码。"},
+    {"id": "exmail", "name": "腾讯企业邮箱", "host": "imap.exmail.qq.com", "port": 993,
+     "url": "https://exmail.qq.com/",
+     "help": "请确认企业管理员允许 IMAP，并使用邮箱客户端密码/授权码。"},
+    {"id": "aliyun", "name": "阿里云企业邮箱", "host": "imap.qiye.aliyun.com", "port": 993,
+     "url": "https://qiye.aliyun.com/",
+     "help": "企业邮箱服务器可能由管理员自定义；必要时请使用“其他 IMAP 邮箱”填写管理员提供的地址。"},
+    {"id": "zoho", "name": "Zoho Mail", "host": "imap.zoho.com", "port": 993,
+     "url": "https://mail.zoho.com/",
+     "help": "服务器地址可能因账号的数据中心区域不同而变化；按 Zoho 账户设置核对 IMAP 地址。"},
+    {"id": "fastmail", "name": "Fastmail", "host": "imap.fastmail.com", "port": 993,
+     "url": "https://www.fastmail.com/",
+     "help": "使用 Fastmail 的应用专用密码，不要使用网页登录密码。"},
 ]
+DEFAULT_PROVIDER_IDS = {"gmail", "qq", "tsinghua"}
+CATEGORY_ORDER = ["需尽快处理", "日程与会议", "课程与学术", "求职与实习", "账单与账户", "通知与订阅", "其他往来"]
+CATEGORY_ALIASES = {
+    "紧急/待处理": "需尽快处理",
+    "订阅与通知": "通知与订阅",
+    "个人与其他": "其他往来",
+}
+CATEGORY_RULES = {
+    "需尽快处理": [
+        "urgent", "action required", "asap", "due today", "deadline", "overdue",
+        "请尽快", "尽快处理", "待处理", "待确认", "截止日期", "即将截止",
+        "逾期", "需要回复", "请回复", "需回复", "待审批", "审核通过",
+        "payment due", "verify your account", "account locked",
+    ],
+    "日程与会议": [
+        "calendar", "meeting", "appointment", "invitation", "schedule", "webinar",
+        "zoom", "teams meeting", "会议", "日程", "预约", "活动邀请", "面试安排",
+        "报名确认", "时间变更", "地点变更", "开会", "日历",
+    ],
+    "课程与学术": [
+        "清华", "北京大学", "课程", "教务", "研究生", "学术", "论文", "讲座",
+        "seminar", "conference", "journal", "submission", "course", "university",
+        "academic", "scholarship", "advisor", "导师", "答辩", "开题", "成绩",
+    ],
+    "求职与实习": [
+        "招聘", "实习", "面试", "录用", "offer", "career", "recruit", "interview",
+        "internship", "job opportunity", "快手", "美团", "简历", "岗位", "hr ",
+        "申请进度", "候选人",
+    ],
+    "账单与账户": [
+        "账单", "发票", "付款", "支付", "退款", "订单", "invoice", "payment",
+        "receipt", "billing", "subscription renewal", "bank statement", "密码重置",
+        "password reset", "登录提醒", "security alert", "verification code",
+        "验证码", "安全提醒", "异常登录", "付款成功",
+    ],
+    "通知与订阅": [
+        "unsubscribe", "newsletter", "邮件订阅", "每周摘要", "weekly digest",
+        "no-reply", "noreply", "notification", "通知摘要", "产品更新",
+        "product update", "digest", "自动回复", "系统通知",
+    ],
+}
+PRIORITY_TERMS = {
+    "高": ["urgent", "action required", "asap", "due today", "overdue", "deadline",
+           "紧急", "尽快", "截止", "逾期", "请回复", "待审批", "账户锁定"],
+    "中": ["meeting", "invitation", "interview", "payment", "calendar",
+           "会议", "邀请", "面试", "付款", "需要确认", "请确认", "预约"],
+}
+
+def normalize_category(category: str) -> str:
+    return CATEGORY_ALIASES.get(category, category if category in CATEGORY_ORDER else "其他往来")
+
+
+def classify(mail: dict) -> str:
+    haystack = " ".join(str(mail.get(key, "") or "") for key in
+                        ("subject", "sender", "sender_address", "preview")).lower()
+    for category in CATEGORY_ORDER[:-1]:
+        if any(term.lower() in haystack for term in CATEGORY_RULES[category]):
+            return category
+    if any(x in haystack for x in ("edu.cn", "tsinghua.edu", "pku.edu", "course", "论文", "学术")):
+        return "课程与学术"
+    return "其他往来"
+
+
+def classify_priority(mail: dict) -> str:
+    """Transparent keyword-based triage; users should verify classification for critical mail."""
+    haystack = " ".join(str(mail.get(key, "") or "") for key in
+                        ("subject", "sender", "sender_address", "preview")).lower()
+    if any(term.lower() in haystack for term in PRIORITY_TERMS["高"]):
+        return "高"
+    if any(term.lower() in haystack for term in PRIORITY_TERMS["中"]):
+        return "中"
+    return "普通"
+
+
+
+
 CATEGORY_ORDER = ["紧急/待处理", "课程与学术", "求职与实习", "账单与账户", "订阅与通知", "个人与其他"]
 RULES = {
     "紧急/待处理": ["紧急", "尽快", "请处理", "待处理", "待确认", "截止", "逾期", "deadline", "urgent", "action required", "asap", "due today", "approval required", "verify your account"],
@@ -48,10 +160,18 @@ RULES = {
 
 
 def user_data_dir() -> Path:
-    base = os.environ.get("APPDATA") or str(Path.home() / ".config")
-    path = Path(base) / "MailBriefingAssistant"
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+        path = base / "MailBriefingAssistant"
+    elif sys.platform == "darwin":
+        path = Path.home() / "Library" / "Application Support" / "MailAssistant"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+        path = base / "MailBriefingAssistant"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
 
 
 DATA_DIR = user_data_dir()
@@ -65,11 +185,17 @@ logging.basicConfig(filename=LOG_PATH, level=logging.INFO,
 
 
 def default_settings() -> dict:
+    providers = [p for p in PROVIDERS if p["id"] in DEFAULT_PROVIDER_IDS]
     return {
         "daily_time": "08:00",
-        "accounts": [{"id": p["id"], "name": p["name"], "host": p["host"], "port": p["port"],
-                      "url": p["url"], "email": "", "enabled": True} for p in PROVIDERS],
+        "accounts": [{
+            "id": p["id"], "provider_id": p["id"], "name": p["name"],
+            "host": p["host"], "port": p["port"], "url": p["url"],
+            "email": "", "enabled": True
+        } for p in providers],
     }
+
+
 
 
 def load_json(path: Path, fallback):
@@ -83,14 +209,47 @@ def load_json(path: Path, fallback):
 def load_settings() -> dict:
     result = default_settings()
     saved = load_json(SETTINGS_PATH, {})
-    if isinstance(saved, dict):
-        result["daily_time"] = saved.get("daily_time", result["daily_time"])
-        saved_accounts = {a.get("id"): a for a in saved.get("accounts", []) if isinstance(a, dict)}
-        for account in result["accounts"]:
-            old = saved_accounts.get(account["id"], {})
-            account["email"] = old.get("email", "")
-            account["enabled"] = bool(old.get("enabled", True))
+    if not isinstance(saved, dict):
+        return result
+    result["daily_time"] = saved.get("daily_time", result["daily_time"])
+    saved_accounts = {
+        str(account.get("id")): account
+        for account in saved.get("accounts", [])
+        if isinstance(account, dict) and account.get("id")
+    }
+    known_ids = {account["id"] for account in result["accounts"]}
+    merged = []
+    for account in result["accounts"]:
+        old = saved_accounts.get(account["id"], {})
+        merged.append({
+            **account,
+            **{key: old[key] for key in ("name", "host", "port", "url", "email", "enabled", "provider_id") if key in old},
+            "provider_id": old.get("provider_id", old.get("id", account["id"])),
+            "enabled": bool(old.get("enabled", account.get("enabled", True))),
+        })
+    # Preserve providers added in newer versions and user-defined IMAP accounts.
+    for account_id, old in saved_accounts.items():
+        if account_id in known_ids:
+            continue
+        provider_id = old.get("provider_id", account_id)
+        provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
+        if not isinstance(old.get("host"), str) or not old.get("host"):
+            continue
+        normalized = {
+            "id": account_id,
+            "provider_id": provider_id if provider else "custom",
+            "name": old.get("name") or (provider["name"] if provider else "自定义邮箱"),
+            "host": old.get("host"),
+            "port": int(old.get("port") or 993),
+            "url": old.get("url", provider["url"] if provider else ""),
+            "email": old.get("email", ""),
+            "enabled": bool(old.get("enabled", True)),
+        }
+        merged.append(normalized)
+    result["accounts"] = merged
     return result
+
+
 
 
 def save_settings(settings: dict) -> None:
@@ -506,7 +665,7 @@ class MailBriefingWidget:
             parent, text=label, bg=self.PANEL,
             fg=self.ACCENT if accent else self.MUTED,
             cursor="hand2",
-            font=("Microsoft YaHei UI", 9, "bold"),
+            font=(UI_FONT, 9, "bold"),
             padx=7, pady=3
         )
         widget.bind("<Button-1>", lambda event: command())
@@ -521,7 +680,7 @@ class MailBriefingWidget:
         header.pack(fill="x", padx=12, pady=(9, 2))
         self.title_label = tk.Label(
             header, text="邮件助手", bg=self.BG, fg=self.TEXT,
-            font=("Microsoft YaHei UI", 11, "bold"), cursor="fleur"
+            font=(UI_FONT, 11, "bold"), cursor="fleur"
         )
         self.title_label.pack(side="left")
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
@@ -537,14 +696,14 @@ class MailBriefingWidget:
         self.quit_button.pack(side="right", padx=(0, 4))
         self.summary_label = tk.Label(
             self.card, text="", bg=self.BG, fg=self.MUTED,
-            font=("Microsoft YaHei UI", 9), justify="left", anchor="w",
+            font=(UI_FONT, 9), justify="left", anchor="w",
             wraplength=400
         )
         self.summary_label.pack(fill="x", padx=13, pady=(1, 8))
         self.content = tk.Frame(self.card, bg=self.BG)
         self.section_label = tk.Label(
             self.content, text="新邮件详情  ·  点击邮件可打开对应邮箱",
-            bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 9, "bold"), anchor="w"
+            bg=self.BG, fg=self.TEXT, font=(UI_FONT, 9, "bold"), anchor="w"
         )
         self.section_label.pack(fill="x", padx=12, pady=(2, 7))
         list_holder = tk.Frame(self.content, bg=self.BG)
@@ -563,7 +722,7 @@ class MailBriefingWidget:
         footer.pack(fill="x", padx=12, pady=(7, 10))
         tk.Label(
             footer, text="邮件仅在本机分类 · 不上传邮件内容",
-            bg=self.BG, fg="#8291A8", font=("Microsoft YaHei UI", 8)
+            bg=self.BG, fg="#8291A8", font=(UI_FONT, 8)
         ).pack(side="left")
         self.open_mail_button = self._button(footer, "打开邮箱 ↗", self.open_webmail, accent=True)
         self.open_mail_button.pack(side="right")
@@ -637,7 +796,7 @@ class MailBriefingWidget:
         if summary:
             tk.Label(
                 self.list_frame, text=summary, bg=self.BG, fg=self.MUTED,
-                font=("Microsoft YaHei UI", 8), justify="left",
+                font=(UI_FONT, 8), justify="left",
                 wraplength=400, anchor="w"
             ).pack(fill="x", padx=3, pady=(0, 8))
 
@@ -650,7 +809,7 @@ class MailBriefingWidget:
             tk.Label(
                 self.list_frame,
                 text="今天暂时没有新邮件。到设定时间后，这里会展示邮件来源、分类和正文摘要。",
-                bg=self.ROW, fg=self.MUTED, font=("Microsoft YaHei UI", 9),
+                bg=self.ROW, fg=self.MUTED, font=(UI_FONT, 9),
                 padx=12, pady=16, wraplength=400, justify="left",
             ).pack(fill="x", padx=2, pady=2)
 
@@ -695,7 +854,7 @@ class MailBriefingWidget:
             }.get(account_id, "其他邮箱")
             account_label = tk.Label(
                 top, text=account_name, bg=badge_bg, fg=badge_fg,
-                font=("Microsoft YaHei UI", 8, "bold"),
+                font=(UI_FONT, 8, "bold"),
                 padx=6, pady=2, cursor="hand2",
             )
             account_label.pack(side="left")
@@ -704,25 +863,25 @@ class MailBriefingWidget:
             category_label = tk.Label(
                 top, text=category, bg=self.ROW,
                 fg=category_colors.get(category, self.MUTED),
-                font=("Microsoft YaHei UI", 8, "bold"), cursor="hand2",
+                font=(UI_FONT, 8, "bold"), cursor="hand2",
             )
             category_label.pack(side="left", padx=(8, 0))
 
             date_label = tk.Label(
                 top, text=date_text, bg=self.ROW, fg=self.MUTED,
-                font=("Microsoft YaHei UI", 8), cursor="hand2",
+                font=(UI_FONT, 8), cursor="hand2",
             )
             date_label.pack(side="right")
 
             sender_label = tk.Label(
                 row, text=mail.get("sender", "未知发件人"), bg=self.ROW, fg=self.MUTED,
-                font=("Microsoft YaHei UI", 9), anchor="w", justify="left", cursor="hand2",
+                font=(UI_FONT, 9), anchor="w", justify="left", cursor="hand2",
             )
             sender_label.pack(fill="x", padx=10, pady=(0, 1))
 
             subject_label = tk.Label(
                 row, text=mail.get("subject", "（无主题）"), bg=self.ROW, fg=self.TEXT,
-                font=("Microsoft YaHei UI", 10, "bold"), anchor="w", justify="left",
+                font=(UI_FONT, 10, "bold"), anchor="w", justify="left",
                 wraplength=400, cursor="hand2",
             )
             subject_label.pack(fill="x", padx=10, pady=(1, 3))
@@ -732,7 +891,7 @@ class MailBriefingWidget:
                 preview = "暂无正文摘要；点击此邮件可打开原邮箱查看。"
             preview_label = tk.Label(
                 row, text=preview, bg=self.ROW, fg="#475467",
-                font=("Microsoft YaHei UI", 9), anchor="w", justify="left",
+                font=(UI_FONT, 9), anchor="w", justify="left",
                 wraplength=400, cursor="hand2",
             )
             preview_label.pack(fill="x", padx=10, pady=(0, 9))
@@ -745,7 +904,7 @@ class MailBriefingWidget:
             error_row = tk.Label(
                 self.list_frame, text="检查提示  ·  " + error,
                 bg="#FEF3F2", fg="#B42318",
-                font=("Microsoft YaHei UI", 8), anchor="w", justify="left",
+                font=(UI_FONT, 8), anchor="w", justify="left",
                 wraplength=400, padx=10, pady=8,
             )
             error_row.pack(fill="x", padx=2, pady=3)
@@ -937,7 +1096,7 @@ class MailBriefingApp:
     def build_ui(self):
         wrapper = ttk.Frame(self.root, padding=14)
         wrapper.pack(fill="both", expand=True)
-        ttk.Label(wrapper, text="邮件助手", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(wrapper, text="邮件助手", font=(UI_FONT, 18, "bold")).pack(anchor="w")
         ttk.Label(wrapper, text="汇总 Gmail、QQ 邮箱与清华邮箱的新邮件；本机分类，不上传邮件内容。", foreground="#555").pack(anchor="w", pady=(2, 12))
         self.notebook = ttk.Notebook(wrapper)
         self.notebook.pack(fill="both", expand=True)
@@ -955,7 +1114,7 @@ class MailBriefingApp:
         ttk.Button(bottom, text="立即检查新邮件", command=self.check_now).pack(side="right")
 
     def build_settings_tab(self):
-        ttk.Label(self.settings_tab, text="账号设置", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(self.settings_tab, text="账号设置", font=(UI_FONT, 11, "bold")).pack(anchor="w")
         for account in self.settings["accounts"]:
             provider = next(p for p in PROVIDERS if p["id"] == account["id"])
             card = ttk.LabelFrame(self.settings_tab, text=f"{account['name']} · {account['host']}:{account['port']}", padding=8)
@@ -989,7 +1148,7 @@ class MailBriefingApp:
     def build_inbox_tab(self):
         toolbar = ttk.Frame(self.inbox_tab)
         toolbar.pack(fill="x", pady=(0, 6))
-        ttk.Label(toolbar, text="新邮件", font=("Microsoft YaHei UI", 11, "bold")).pack(side="left")
+        ttk.Label(toolbar, text="新邮件", font=(UI_FONT, 11, "bold")).pack(side="left")
         ttk.Button(toolbar, text="刷新列表", command=self.render_welcome).pack(side="right")
 
         columns = ("category", "account", "sender", "subject", "date")
