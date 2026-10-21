@@ -975,7 +975,7 @@ class MailBriefingWidget:
             if configured:
                 text = f"每天 {due_time} 检查  ·  已连接配置 {configured} 个邮箱"
             else:
-                text = "点击“设置”添加邮箱，支持 Gmail、QQ 邮箱和清华邮箱"
+                text = "点击“设置”添加主流邮箱，或配置自定义 IMAP SSL 服务"
         self.summary_label.configure(text=text, wraplength=410 if self.expanded else 332)
 
     def _render_details(self):
@@ -1486,6 +1486,7 @@ class MailBriefingApp:
 
         def provider_changed(event=None):
             selected = provider_var.get()
+            username_var.set("")
             if selected == custom_label:
                 host_var.set("")
                 port_var.set("993")
@@ -1730,7 +1731,7 @@ class MailBriefingApp:
             self.show_selected_preview()
         else:
             self.preview_var.set("没有可显示的邮件摘要。")
-        self.status.set(f"检查完成：{len(mails)} 封新邮件，{len(errors)} 个邮箱出错。")
+        self.status.set(f"检查完成：{len(self.recent_mails)} 封当日新邮件，{len(errors)} 个邮箱出错。")
         if errors and warn_errors:
             messagebox.showwarning("部分邮箱检查失败", "\n".join(errors))
 
