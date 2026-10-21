@@ -951,26 +951,43 @@ def check_account(account: dict, state: dict, test_only: bool = False) -> tuple[
         all_uids = sorted(int(item) for item in (data[0] or b"").split() if item.isdigit())
         if test_only:
             return [], (all_uids[-1] if all_uids else 0)
+
+        # UID is a synchronization cursor, not a definition of "today".
+        # Re-scan messages from the current local calendar day on every refresh,
+        # because older UIDs can still belong to today and must remain in the count.
+        local_today = datetime.now().astimezone().date()
+        search_since = (local_today - timedelta(days=1)).strftime("%d-%b-%Y")
+        day_status, day_data = conn.uid("search", None, "SINCE", search_since)
+        if day_status == "OK":
+            day_uids = {
+                int(item) for item in (day_data[0] or b"").split() if item.isdigit()
+            }
+        else:
+            # If date-scoped search is unsupported, fall back to the regular
+            # incremental scan; the account check still reports errors only on
+            # a hard failure above.
+            day_uids = set()
+
         last_uid = state["last_uid"].get(account["id"])
         if last_uid is None:
-            candidates = all_uids[-100:]
-            initial_scan = True
+            incremental_uids = set(all_uids[-100:])
         else:
-            candidates = [uid for uid in all_uids if uid > int(last_uid)][:100]
-            initial_scan = False
+            incremental_uids = {
+                uid for uid in all_uids if uid > int(last_uid)
+            }
+            incremental_uids = set(sorted(incremental_uids)[:100])
+
+        # Include every UID that the server says may have arrived today, plus
+        # newly discovered UIDs. Exact local-day filtering happens after parsing.
+        candidates = sorted(day_uids | incremental_uids)
         results = []
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         for uid in candidates:
             raw = fetch_raw(conn, uid)
             item = parse_message(raw, uid, account)
-            if initial_scan and item["date"] and item["date"] < cutoff:
-                continue
             item["category"] = classify(item)
             results.append(item)
-        if candidates:
-            new_last = candidates[-1]
-        else:
-            new_last = all_uids[-1] if all_uids else (int(last_uid) if last_uid is not None else 0)
+
+        new_last = all_uids[-1] if all_uids else (int(last_uid) if last_uid is not None else 0)
         return results, new_last
     finally:
         try:
@@ -1292,6 +1309,10 @@ class MailBriefingWidget:
         self.expand_button.pack(side="right")
         self.settings_button = self._button(header, "设置", self.open_settings)
         self.settings_button.pack(side="right", padx=(0, 4))
+        self.refresh_button = self._button(
+            header, "↻ 刷新", lambda: self._start_refresh(reason="manual", daily=False), accent=True
+        )
+        self.refresh_button.pack(side="right", padx=(0, 4))
         self.min_button = self._button(header, "—", self.collapse_details)
         self.min_button.pack(side="right", padx=(0, 4))
         self.quit_button = self._button(header, "×", self.quit)
@@ -1725,8 +1746,8 @@ class MailBriefingWidget:
             return
 
         self._refresh_in_progress = True
-        self.summary_label.configure(text="正在更新今日新邮件……")
         self._update_summary()
+        self.summary_label.configure(text="正在更新今日新邮件……")
 
         def worker():
             error_messages = []
