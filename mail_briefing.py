@@ -1531,14 +1531,7 @@ class MailBriefingWidget:
         for child in self.list_frame.winfo_children():
             child.destroy()
 
-        settings = load_settings()
-        mailbox_summary = mailbox_status_labels(self.last_mails, settings.get("accounts", []), self.last_errors)
-        if mailbox_summary:
-            tk.Label(
-                self.list_frame, text="各邮箱今日邮件  ·  " + "  |  ".join(mailbox_summary),
-                bg=self.BG, fg=self.ACCENT, font=(UI_FONT, 9, "bold"),
-                justify="left", wraplength=420, anchor="w",
-            ).pack(fill="x", padx=3, pady=(0, 8))
+        # Per-mailbox counts remain in the widget summary; omit the duplicate row here.
 
         counts = {
             category: sum(1 for mail in self.last_mails if mail.get("category") == category)
