@@ -651,8 +651,8 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
             from winotify import Notification
             Notification(app_id=APP_TITLE, title=title, msg=summary[:230], duration="short").show()
         elif sys.platform == "darwin":
-            safe_title = title.replace("\\", "\\\\").replace('"', '\\"').replace("\\n", " ")
-            safe_summary = summary[:230].replace("\\", "\\\\").replace('"', '\\"').replace("\\n", " ")
+            safe_title = title.replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
+            safe_summary = summary[:230].replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
             script = f'display notification "{safe_summary}" with title "{safe_title}"'
             subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True, timeout=10)
         else:
