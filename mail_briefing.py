@@ -599,7 +599,7 @@ def populate_mailbox_menu(menu: tk.Menu, callback, on_configure=None) -> None:
 
 
 def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
-    """Open an in-app read-only message view and load its body asynchronously."""
+    """Show cached preview immediately, then fetch the body in the background."""
     win = tk.Toplevel(parent)
     win.title("邮件正文 · 邮件助手")
     win.geometry("720x590")
@@ -633,36 +633,56 @@ def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
     body_text.configure(yscrollcommand=scrollbar.set)
     scrollbar.pack(side="right", fill="y")
     body_text.pack(side="left", fill="both", expand=True)
-    body_text.insert("1.0", "正在从邮箱读取正文……")
+
+    cached_preview = str(mail.get("preview", "") or "").strip()
+    initial_text = cached_preview or "正在读取邮件正文……\n\n如果加载较慢，可立即在网页版中查找这封邮件。"
+    body_text.insert("1.0", initial_text)
     body_text.configure(state="disabled")
 
+    status_var = tk.StringVar(value="正在连接邮箱读取正文；上方先显示本地缓存摘要。")
+    ttk.Label(wrapper, textvariable=status_var, font=(UI_FONT, 9)).pack(anchor="w", pady=(5, 0))
     footer = ttk.Frame(wrapper)
-    footer.pack(fill="x", pady=(9, 0))
+    footer.pack(fill="x", pady=(8, 0))
     ttk.Label(footer, text="只读读取 · 不会标记已读或修改原邮件",
               font=(UI_FONT, 9)).pack(side="left")
-    if open_webmail_callback:
-        ttk.Button(
-            footer, text="在网页版打开",
-            command=lambda aid=mail.get("account_id"): open_webmail_callback(aid)
-        ).pack(side="right", padx=(6, 0))
+    ttk.Button(
+        footer, text="网页版定位这封邮件",
+        command=lambda selected=mail: open_mail_in_web(str(selected.get("account_id", "")), selected)
+    ).pack(side="right", padx=(6, 0))
     ttk.Button(footer, text="关闭", command=win.destroy).pack(side="right")
+
+    state = {"done": False}
+
+    def show_slow_hint():
+        if win.winfo_exists() and not state["done"]:
+            status_var.set("读取时间较长。可点击“网页版定位这封邮件”立即继续，不必等待。")
+
+    win.after(1800, show_slow_hint)
 
     def load_worker():
         try:
             result = fetch_message_content(str(mail.get("account_id", "")), int(mail.get("uid")))
             error = None
         except Exception as exc:
-            result = {"body": "暂时无法读取正文。\n\n" + str(exc)}
+            result = {"body": cached_preview or "暂时无法读取正文。"}
             error = exc
 
         def display_result():
             if not win.winfo_exists():
                 return
-            if not error:
+            state["done"] = True
+            if error:
+                status_var.set("读取未成功；可通过网页版定位这封邮件。")
+                body = result["body"]
+                if cached_preview:
+                    body += "\n\n（完整正文暂时不可用；上方缓存摘要仍可参考。）"
+            else:
                 win.title(f"{result.get('subject', '邮件正文')} · 邮件助手")
+                status_var.set("正文已加载。")
+                body = result["body"]
             body_text.configure(state="normal")
             body_text.delete("1.0", "end")
-            body_text.insert("1.0", result["body"])
+            body_text.insert("1.0", body)
             body_text.configure(state="disabled")
         try:
             win.after(0, display_result)
@@ -670,7 +690,6 @@ def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
             pass
 
     threading.Thread(target=load_worker, daemon=True).start()
-
 
 def check_account(account: dict, state: dict, test_only: bool = False) -> tuple[list[dict], int | None]:
     conn = imap_connect(account)
