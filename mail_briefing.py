@@ -324,42 +324,82 @@ def decode_header(value) -> str:
         return ""
 
 
-def extract_body(message) -> str:
-    parts = []
+class VisibleHTMLParser(HTMLParser):
+    """Extract visible text from HTML emails without executing or rendering HTML."""
+    BLOCK_TAGS = {
+        "address", "article", "br", "dd", "div", "dl", "dt", "footer",
+        "h1", "h2", "h3", "h4", "header", "hr", "li", "main", "ol", "p",
+        "section", "table", "tr", "ul",
+    }
+    HIDDEN_TAGS = {"script", "style", "head", "svg", "noscript"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.hidden_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in self.HIDDEN_TAGS:
+            self.hidden_depth += 1
+        elif not self.hidden_depth and tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in self.HIDDEN_TAGS and self.hidden_depth:
+            self.hidden_depth -= 1
+        elif not self.hidden_depth and tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.hidden_depth:
+            self.parts.append(data)
+
+    def get_text(self) -> str:
+        return re.sub(r"[ \t\u00a0]+", " ", re.sub(r"\n[ \t]*", "\n", "".join(self.parts))).strip()
+
+
+def _part_text(part) -> str:
     try:
-        if message.is_multipart():
-            for part in message.walk():
-                if part.get_content_maintype() == "multipart":
-                    continue
-                if part.get_content_disposition() == "attachment":
-                    continue
-                if part.get_content_type() not in ("text/plain", "text/html"):
-                    continue
-                try:
-                    value = part.get_content()
-                except Exception:
-                    payload = part.get_payload(decode=True) or b""
-                    value = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-                if part.get_content_type() == "text/html":
-                    value = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", str(value))
-                    value = re.sub(r"(?s)<[^>]+>", " ", str(value))
-                parts.append(str(value))
-                if sum(len(p) for p in parts) > 1600:
-                    break
-        else:
-            try:
-                value = message.get_content()
-            except Exception:
-                payload = message.get_payload(decode=True) or b""
-                value = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
-            if message.get_content_type() == "text/html":
-                value = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", str(value))
-                value = re.sub(r"(?s)<[^>]+>", " ", str(value))
-            parts.append(str(value))
+        value = part.get_content()
+    except Exception:
+        payload = part.get_payload(decode=True) or b""
+        value = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+    if part.get_content_type() == "text/html":
+        parser = VisibleHTMLParser()
+        try:
+            parser.feed(str(value))
+            return parser.get_text()
+        except Exception:
+            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(value))).strip()
+    return str(value).strip()
+
+
+def extract_body(message, limit: int = 450) -> str:
+    """Prefer text/plain, otherwise extract visible text from HTML; ignore attachments."""
+    plain_parts = []
+    html_parts = []
+    try:
+        parts = message.walk() if message.is_multipart() else [message]
+        for part in parts:
+            if part.get_content_maintype() == "multipart":
+                continue
+            if part.get_content_disposition() == "attachment":
+                continue
+            content_type = part.get_content_type()
+            if content_type not in ("text/plain", "text/html"):
+                continue
+            text = _part_text(part)
+            if text:
+                (plain_parts if content_type == "text/plain" else html_parts).append(text)
+            if sum(len(item) for item in plain_parts) >= limit * 2:
+                break
     except Exception:
         logging.debug("Could not extract message body", exc_info=True)
-    text = re.sub(r"\s+", " ", " ".join(parts)).strip()
-    return text[:450]
+    chosen = plain_parts if plain_parts else html_parts
+    text = re.sub(r"\s+", " ", " ".join(chosen)).strip()
+    return text[:limit]
 
 
 def parse_message(raw: bytes, uid: int, account: dict) -> dict:
@@ -378,21 +418,37 @@ def parse_message(raw: bytes, uid: int, account: dict) -> dict:
             received = received.astimezone(timezone.utc)
         except Exception:
             received = None
-    return {"uid": uid, "account_id": account["id"], "account_name": account["name"],
-            "account_email": account.get("email", ""), "subject": subject, "sender": sender,
-            "sender_address": address or from_header, "date": received,
-            "preview": extract_body(msg)}
+    mail = {
+        "uid": uid, "account_id": account["id"], "account_name": account["name"],
+        "provider_id": account.get("provider_id", account.get("id", "")),
+        "account_email": account.get("email", ""), "subject": subject, "sender": sender,
+        "sender_address": address or from_header, "date": received,
+        "preview": extract_body(msg, 450),
+    }
+    mail["category"] = classify(mail)
+    mail["priority"] = classify_priority(mail)
+    return mail
 
 
 def classify(mail: dict) -> str:
-    haystack = (mail.get("subject", "") + " " + mail.get("sender", "") + " " +
-                mail.get("sender_address", "") + " " + mail.get("preview", "")).lower()
+    haystack = " ".join(str(mail.get(key, "") or "") for key in
+                        ("subject", "sender", "sender_address", "preview")).lower()
+    # If the message has an urgent action, surface it before topical categories.
     for category in CATEGORY_ORDER[:-1]:
-        if any(term.lower() in haystack for term in RULES[category]):
+        if any(term.lower() in haystack for term in CATEGORY_RULES[category]):
             return category
-    if any(x in haystack for x in ("edu.cn", "tsinghua.edu", "pku.edu", "course", "论文", "学术")):
-        return "课程与学术"
-    return "个人与其他"
+    return "其他往来"
+
+
+def classify_priority(mail: dict) -> str:
+    haystack = " ".join(str(mail.get(key, "") or "") for key in
+                        ("subject", "sender", "sender_address", "preview")).lower()
+    if any(term.lower() in haystack for term in PRIORITY_TERMS["高"]):
+        return "高"
+    if any(term.lower() in haystack for term in PRIORITY_TERMS["中"]):
+        return "中"
+    return "普通"
+
 
 
 def imap_connect(account: dict):
@@ -416,14 +472,25 @@ def imap_connect(account: dict):
         raise
 
 
-def fetch_raw(conn, uid: int) -> bytes:
-    status, data = conn.uid("fetch", str(uid), "(BODY.PEEK[]<0.4096>)")
+def _fetch_bytes(conn, uid: int, section: str) -> bytes:
+    status, data = conn.uid("fetch", str(uid), f"({section})")
     if status != "OK" or not data:
         raise RuntimeError(f"无法读取邮件 UID {uid}")
     chunks = [item[1] for item in data if isinstance(item, tuple) and isinstance(item[1], bytes)]
     if not chunks:
         raise RuntimeError(f"邮件 UID {uid} 未返回内容")
     return b"\r\n".join(chunks)
+
+
+def fetch_raw(conn, uid: int, body_limit: int | None = 262144) -> bytes:
+    """Fetch message headers plus a bounded body fragment; never mark it read."""
+    header = _fetch_bytes(conn, uid, "BODY.PEEK[HEADER]")
+    body_section = "BODY.PEEK[TEXT]" if body_limit is None else f"BODY.PEEK[TEXT]<0.{int(body_limit)}>"
+    try:
+        body = _fetch_bytes(conn, uid, body_section)
+    except RuntimeError:
+        body = b""
+    return header.rstrip(b"\r\n") + b"\r\n\r\n" + body
 
 
 def check_account(account: dict, state: dict, test_only: bool = False) -> tuple[list[dict], int | None]:
