@@ -1910,7 +1910,7 @@ class MailBriefingApp:
         ttk.Label(bottom, textvariable=self.status).pack(side="left", fill="x", expand=True)
         self.open_mail_button = ttk.Button(
             bottom, text="打开邮箱 ▾",
-            command=lambda: show_mailbox_popup(self.open_mail_button, self.open_webmail, self.open_settings)
+            command=lambda: show_mailbox_popup(self.open_mail_button, self.open_webmail)
         )
         self.open_mail_button.pack(side="right", padx=(6, 0))
         ttk.Button(bottom, text="立即检查新邮件", command=self.check_now).pack(side="right")
