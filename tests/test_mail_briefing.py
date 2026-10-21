@@ -91,6 +91,42 @@ class MailAssistantTests(unittest.TestCase):
         self.assertIn("#search/", url)
         self.assertIn("Meeting", url)
 
+
+    def test_outlook_web_fallback_searches_by_subject(self):
+        account = {
+            **self.account,
+            "id": "outlook",
+            "provider_id": "outlook",
+            "url": "https://outlook.live.com/mail/",
+        }
+        url = app.resolve_webmail_url(account, {"subject": "Meeting tomorrow"})
+        self.assertIn("outlook.live.com/mail/0/search/", url)
+        self.assertIn("Meeting", url)
+
+    def test_custom_mailbox_fallback_uses_configured_webmail_url(self):
+        account = {
+            **self.account,
+            "id": "custom-1",
+            "provider_id": "custom",
+            "url": "https://mail.example.com/inbox",
+        }
+        self.assertEqual(
+            app.resolve_webmail_url(account, {"subject": "Important notice"}),
+            "https://mail.example.com/inbox",
+        )
+
+    def test_jump_to_original_opens_the_selected_message_search(self):
+        from unittest.mock import patch
+
+        message = {"subject": "Meeting tomorrow", "sender_address": "notice@example.edu"}
+        with patch("mail_briefing.get_account_for_open", return_value=self.account), \\
+             patch("mail_briefing.webbrowser.open") as open_browser:
+            app.open_mail_in_web("gmail", message)
+
+        open_browser.assert_called_once()
+        self.assertIn("#search/", open_browser.call_args.args[0])
+        self.assertIn("Meeting", open_browser.call_args.args[0])
+
     def test_custom_imap_account_survives_settings_roundtrip(self):
         old_path = app.SETTINGS_PATH
         try:
