@@ -1,31 +1,62 @@
 $ErrorActionPreference = 'Stop'
+
 $InstallDir = Join-Path $env:LOCALAPPDATA 'MailBriefingAssistant'
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Get-ChildItem -LiteralPath $PSScriptRoot -Force | Where-Object { $_.Name -notin @('.venv', '__pycache__') } | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
-}
+
+Get-ChildItem -LiteralPath $PSScriptRoot -Force |
+    Where-Object { $_.Name -notin @('.venv', '__pycache__', '.git') } |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
+    }
+
 $Py = Get-Command py -ErrorAction SilentlyContinue
 if (-not $Py) {
-    throw '未找到 Python Launcher。请先安装 Python 3.11+，并勾选 Add Python to PATH，然后重新运行本脚本。'
+    throw 'Python Launcher not found. Install Python 3.11+ and enable Add Python to PATH, then run this installer again.'
 }
-if (-not (Test-Path (Join-Path $InstallDir '.venv\Scripts\python.exe'))) {
-    & py -3 -m venv (Join-Path $InstallDir '.venv')
-}
-$Python = Join-Path $InstallDir '.venv\Scripts\python.exe'
-& $Python -m pip install --upgrade pip
-& $Python -m pip install -r (Join-Path $InstallDir 'requirements.txt')
-$PythonW = Join-Path $InstallDir '.venv\Scripts\pythonw.exe'
+
+$VenvDir = Join-Path $InstallDir '.venv'
+$Python = Join-Path $VenvDir 'Scripts\python.exe'
+$PythonW = Join-Path $VenvDir 'Scripts\pythonw.exe'
 $Script = Join-Path $InstallDir 'mail_briefing.py'
-$Action = New-ScheduledTaskAction -Execute $PythonW -Argument ('"{0}" --background' -f $Script) -WorkingDirectory $InstallDir
-$Trigger = New-ScheduledTaskTrigger -AtLogOn -User ("{0}\{1}" -f $env:USERDOMAIN, $env:USERNAME)
+$Requirements = Join-Path $InstallDir 'requirements.txt'
+
+if (-not (Test-Path -LiteralPath $Python)) {
+    & py -3 -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not create the Python virtual environment.'
+    }
+}
+if (-not (Test-Path -LiteralPath $Python)) {
+    throw 'The virtual environment was not created. Check your Python installation.'
+}
+
+& $Python -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) {
+    throw 'Could not upgrade pip.'
+}
+& $Python -m pip install -r $Requirements
+if ($LASTEXITCODE -ne 0) {
+    throw 'Could not install the requirements.'
+}
+
+$ActionArgs = '"' + $Script + '" --background'
+$Action = New-ScheduledTaskAction -Execute $PythonW -Argument $ActionArgs -WorkingDirectory $InstallDir
+$CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$Trigger = New-ScheduledTaskTrigger -AtLogOn -User $CurrentUser
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
-Register-ScheduledTask -TaskName 'MailBriefingAssistant' -Action $Action -Trigger $Trigger -Settings $Settings -Description '本地邮件晨报助手：登录时启动桌面悬浮小插件，每天按设置时间汇总邮件。' -Force | Out-Null
+
+Register-ScheduledTask -TaskName 'MailBriefingAssistant' -Action $Action -Trigger $Trigger -Settings $Settings -Description 'Mail briefing desktop widget; starts at user logon.' -Force | Out-Null
+
+$Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+New-Item -ItemType Directory -Force -Path $Programs | Out-Null
+$ShortcutPath = Join-Path $Programs '邮件晨报助手.lnk'
+$LaunchPath = Join-Path $InstallDir 'launch.bat'
 $Shell = New-Object -ComObject WScript.Shell
-$ShortcutPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\邮件晨报助手.lnk'
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = (Join-Path $InstallDir 'launch.bat')
+$Shortcut.TargetPath = $LaunchPath
 $Shortcut.WorkingDirectory = $InstallDir
 $Shortcut.Save()
-Write-Host "安装完成。程序目录：$InstallDir"
-Write-Host '请从开始菜单打开“邮件晨报助手”，配置邮箱并测试连接。'
-Start-Process -FilePath (Join-Path $InstallDir 'launch.bat')
+
+Write-Host "Installation complete. Program folder: $InstallDir"
+Write-Host 'Open Mail Briefing Assistant from the Start menu and configure your mail accounts.'
+Start-Process -FilePath $LaunchPath
