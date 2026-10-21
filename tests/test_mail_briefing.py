@@ -82,6 +82,13 @@ class MailAssistantTests(unittest.TestCase):
         finally:
             app.SETTINGS_PATH = old_path
 
+    def test_stored_mail_keeps_sender_address_for_original_link(self):
+        stored = app._stored_mail({
+            "uid": 9, "account_id": "gmail", "subject": "Meeting",
+            "sender": "Office", "sender_address": "office@example.edu",
+        })
+        self.assertEqual(stored["sender_address"], "office@example.edu")
+
     def test_gmail_web_fallback_searches_by_subject(self):
         url = app.resolve_webmail_url(
             self.account,
