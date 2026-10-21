@@ -401,6 +401,64 @@ def test_account(account: dict) -> str:
             pass
 
 
+def hydrate_missing_previews(records: list[dict], settings: dict) -> bool:
+    """Backfill short previews for old locally cached messages using read-only IMAP."""
+    missing = {}
+    for record in records:
+        account_id = str(record.get("account_id", ""))
+        uid = record.get("uid")
+        if record.get("preview") or not account_id or uid is None:
+            continue
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            continue
+        missing.setdefault((account_id, uid), record)
+
+    if not missing:
+        return False
+
+    accounts = {str(account.get("id")): account for account in settings.get("accounts", [])}
+    changed = False
+    for account_id in {key[0] for key in missing}:
+        account = accounts.get(account_id)
+        if not account or not account.get("enabled") or not account.get("email"):
+            continue
+        try:
+            conn = imap_connect(account)
+        except Exception as exc:
+            logging.info("Could not backfill cached preview for %s: %s", account_id, type(exc).__name__)
+            continue
+        try:
+            for (missing_account_id, uid), record in missing.items():
+                if missing_account_id != account_id:
+                    continue
+                try:
+                    parsed = parse_message(fetch_raw(conn, uid), uid, account)
+                    preview = str(parsed.get("preview", "") or "")[:220]
+                    if preview:
+                        record["preview"] = preview
+                        changed = True
+                except Exception as exc:
+                    logging.debug("Could not load cached message preview %s/%s: %s", account_id, uid, type(exc).__name__)
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    # The same message may appear in both the digest and the pending queue.
+    previews = {
+        (str(record.get("account_id", "")), str(record.get("uid", ""))): record.get("preview", "")
+        for record in records if record.get("preview")
+    }
+    for record in records:
+        key = (str(record.get("account_id", "")), str(record.get("uid", "")))
+        if not record.get("preview") and previews.get(key):
+            record["preview"] = previews[key]
+            changed = True
+    return changed
+
 class MailBriefingWidget:
     """Small always-on-top desktop card with collapsible email details."""
 
@@ -440,6 +498,7 @@ class MailBriefingWidget:
         self._update_summary()
         self._render_details()
         self._place(expanded=False)
+        self._start_preview_hydration()
         self.root.after(1200, self._tick)
 
     def _button(self, parent, label, command, accent=False):
@@ -765,6 +824,56 @@ class MailBriefingWidget:
             self.root.destroy()
         except tk.TclError:
             pass
+
+    def _start_preview_hydration(self):
+        if getattr(self, "_preview_hydration_started", False):
+            return
+        self._preview_hydration_started = True
+
+        def worker():
+            digest = load_digest()
+            state = load_state()
+            digest_mails = digest.get("mails", []) if isinstance(digest.get("mails", []), list) else []
+            pending_mails = state.get("pending_digest", []) if isinstance(state.get("pending_digest", []), list) else []
+            records = digest_mails + pending_mails
+            if not any(not record.get("preview") for record in records):
+                return
+            try:
+                changed = hydrate_missing_previews(records, load_settings())
+            except Exception:
+                logging.debug("Cached preview refresh failed", exc_info=True)
+                return
+            if not changed:
+                return
+            try:
+                digest["mails"] = [_stored_mail(item) for item in digest_mails]
+                DIGEST_PATH.write_text(json.dumps(digest, ensure_ascii=False, indent=2), encoding="utf-8")
+                state["pending_digest"] = [_stored_mail(item) for item in pending_mails]
+                save_state(state)
+            except OSError:
+                logging.warning("Could not save refreshed local message previews", exc_info=True)
+                return
+            try:
+                self.root.after(0, lambda: self._apply_preview_refresh(digest, state))
+            except tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_preview_refresh(self, digest, state):
+        pending = state.get("pending_digest", [])
+        if pending:
+            display = {
+                "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "mails": pending,
+                "errors": [],
+            }
+            self._pending_signature = tuple((item.get("account_id"), item.get("uid")) for item in pending)
+        else:
+            display = digest
+        self._set_digest(display)
+
+
 
     def _tick(self):
         try:
