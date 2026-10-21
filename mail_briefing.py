@@ -862,7 +862,19 @@ def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = Fal
     save_state(state)
 
     if daily:
-        digest_mails = today_only([_restore_mail(item) for item in pending], today)
+        previous_digest = load_digest()
+        previous_mails = []
+        if str(previous_digest.get("generated_at", ""))[:10] == today.isoformat():
+            previous_mails = today_only([_restore_mail(item) for item in previous_digest.get("mails", [])], today)
+        digest_map = {
+            (str(mail.get("account_id", "")), str(mail.get("uid", ""))): _stored_mail(mail)
+            for mail in previous_mails
+        }
+        for mail in today_only([_restore_mail(item) for item in pending], today):
+            key = (str(mail.get("account_id", "")), str(mail.get("uid", "")))
+            digest_map[key] = _stored_mail(mail)
+        digest_mails = [_restore_mail(item) for item in digest_map.values()]
+        digest_mails.sort(key=lambda item: item.get("date") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         save_digest(digest_mails, errors)
         if notify:
             send_notification(digest_mails, errors)
@@ -1067,7 +1079,14 @@ class MailBriefingWidget:
             footer, text="邮件仅在本机分类 · 不上传邮件内容",
             bg=self.BG, fg="#8291A8", font=(UI_FONT, 8)
         ).pack(side="left")
-        self.open_mail_button = self._button(footer, "打开邮箱 ↗", self.open_webmail, accent=True)
+        self.open_mail_menu = tk.Menu(self.root, tearoff=0)
+        self.open_mail_button = tk.Button(
+            footer, text="打开邮箱 ▾", command=lambda: self._popup_mail_menu(
+                self.open_mail_button, self.open_mail_menu, self.open_webmail, self.open_settings
+            ), bg=self.PANEL, fg=self.ACCENT, activebackground=self.PANEL,
+            activeforeground=self.TEXT, relief="flat", borderwidth=0,
+            font=(UI_FONT, 9, "bold"), cursor="hand2", padx=8, pady=3,
+        )
         self.open_mail_button.pack(side="right")
 
     def _place(self, expanded=None):
@@ -1328,19 +1347,21 @@ class MailBriefingWidget:
         except Exception as exc:
             logging.warning("Could not open settings window: %s", type(exc).__name__)
 
+    def _popup_mail_menu(self, button, menu, callback, on_configure=None):
+        populate_mailbox_menu(menu, callback, on_configure)
+        try:
+            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
+        finally:
+            menu.grab_release()
+
     def open_webmail(self, account_id=None):
-        settings = load_settings()
-        if account_id is None:
-            account = next((a for a in settings["accounts"] if a.get("enabled") and a.get("email")), None)
+        if account_id:
+            account = get_account_for_open(account_id)
         else:
-            account = next((a for a in settings["accounts"] if a.get("id") == account_id), None)
-        if account and account.get("url"):
-            webbrowser.open(account["url"])
-            return
-        provider_id = account.get("provider_id", account.get("id")) if account else ""
-        provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
-        if provider and provider.get("url"):
-            webbrowser.open(provider["url"])
+            account = get_account_for_open()
+        url = resolve_webmail_url(account)
+        if url:
+            webbrowser.open(url)
         else:
             messagebox.showinfo("未设置网页版地址", "请在添加邮箱时填写该邮箱的网页版登录地址。")
 
@@ -1515,7 +1536,12 @@ class MailBriefingApp:
         bottom.pack(fill="x", pady=(10, 0))
         self.status = tk.StringVar(value="请先配置邮箱并保存。")
         ttk.Label(bottom, textvariable=self.status).pack(side="left", fill="x", expand=True)
-        ttk.Button(bottom, text="打开邮箱", command=self.open_webmail).pack(side="right", padx=(6, 0))
+        self.open_mail_menu = tk.Menu(self.root, tearoff=0)
+        self.open_mail_button = ttk.Button(
+            bottom, text="打开邮箱 ▾",
+            command=lambda: self.popup_mail_menu(self.open_mail_button, self.open_mail_menu)
+        )
+        self.open_mail_button.pack(side="right", padx=(6, 0))
         ttk.Button(bottom, text="立即检查新邮件", command=self.check_now).pack(side="right")
 
     def build_settings_tab(self):
@@ -1896,9 +1922,16 @@ class MailBriefingApp:
             return
         show_mail_detail(self.root, mail, self.open_webmail)
 
+    def popup_mail_menu(self, button, menu):
+        populate_mailbox_menu(menu, self.open_webmail)
+        try:
+            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
+        finally:
+            menu.grab_release()
+
     def open_webmail(self, account_id=None):
         if account_id:
-            account = next((a for a in self.settings["accounts"] if a.get("id") == account_id), None)
+            account = get_account_for_open(account_id)
         else:
             selected = self.tree.selection()
             account = None
@@ -1907,16 +1940,12 @@ class MailBriefingApp:
                 account_name = values[1] if len(values) > 1 else ""
                 account = next((a for a in self.settings["accounts"] if a["name"] == account_name), None)
             if account is None:
-                account = next((a for a in self.settings["accounts"] if a.get("enabled") and a.get("email")), None)
-        if account and account.get("url"):
-            webbrowser.open(account["url"])
+                account = get_account_for_open()
+        url = resolve_webmail_url(account)
+        if url:
+            webbrowser.open(url)
         else:
-            provider_id = account.get("provider_id", account.get("id")) if account else ""
-            provider = next((p for p in PROVIDERS if p["id"] == provider_id), None)
-            if provider and provider.get("url"):
-                webbrowser.open(provider["url"])
-            else:
-                messagebox.showinfo("未设置网页版地址", "请在添加邮箱时填写该邮箱的网页版登录地址。")
+            messagebox.showinfo("未设置网页版地址", "请在添加邮箱时填写该邮箱的网页版登录地址。")
 
 def enable_windows_dpi_awareness():
     """Ask Windows for DPI awareness before creating Tk windows."""
