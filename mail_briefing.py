@@ -20,6 +20,7 @@ from email import policy
 from email.parser import BytesParser
 from html.parser import HTMLParser
 import uuid
+from urllib.parse import quote
 from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
 import tkinter as tk
@@ -450,13 +451,13 @@ def parse_message(raw: bytes, uid: int, account: dict) -> dict:
     return mail
 
 
-def imap_connect(account: dict):
+def imap_connect(account: dict, timeout: int = 25):
     if not account.get("email"):
         raise RuntimeError("尚未填写邮箱地址")
     secret = get_secret(account["id"])
     if not secret:
         raise RuntimeError("尚未保存客户端密码/授权码，请先在设置页填写并保存")
-    conn = imaplib.IMAP4_SSL(account["host"], int(account.get("port", 993)), timeout=25)
+    conn = imaplib.IMAP4_SSL(account["host"], int(account.get("port", 993)), timeout=timeout)
     try:
         login_name = account.get("username") or account["email"]
         conn.login(login_name, secret)
@@ -499,9 +500,9 @@ def fetch_message_content(account_id: str, uid: int) -> dict:
     account = next((item for item in settings["accounts"] if item.get("id") == account_id), None)
     if not account:
         raise RuntimeError("找不到这封邮件对应的邮箱配置。")
-    conn = imap_connect(account)
+    conn = imap_connect(account, timeout=6)
     try:
-        raw = fetch_raw(conn, int(uid), body_limit=2_000_000)
+        raw = fetch_raw(conn, int(uid), body_limit=131072)
         msg = BytesParser(policy=policy.default).parsebytes(raw)
         sender_header = decode_header(msg.get("from")) or "未知发件人"
         display, address = parseaddr(sender_header)
@@ -522,6 +523,79 @@ def fetch_message_content(account_id: str, uid: int) -> dict:
             conn.logout()
         except Exception:
             pass
+
+
+def resolve_webmail_url(account: dict | None, mail: dict | None = None) -> str | None:
+    """Build a provider-specific web URL, using a subject search when supported."""
+    if not account:
+        return None
+    provider_id = str(account.get("provider_id", account.get("id", "")))
+    base_url = account.get("url") or next(
+        (provider.get("url") for provider in PROVIDERS if provider["id"] == provider_id), None
+    )
+    if not base_url:
+        return None
+    subject = str((mail or {}).get("subject", "") or "").strip()
+    if subject and provider_id == "gmail":
+        sender_address = str((mail or {}).get("sender_address", "") or "").strip()
+        query = f'subject:"{subject}"'
+        if sender_address and "@" in sender_address:
+            _, parsed_sender = parseaddr(sender_address)
+            sender_address = parsed_sender or sender_address
+            query += f" from:{sender_address}"
+        return "https://mail.google.com/mail/u/0/#search/" + quote(query, safe="")
+    if subject and provider_id == "outlook":
+        return "https://outlook.live.com/mail/0/search/" + quote(subject, safe="")
+    return base_url
+
+
+def get_account_for_open(account_id: str | None = None) -> dict | None:
+    settings = load_settings()
+    if account_id:
+        account = next((item for item in settings.get("accounts", []) if item.get("id") == account_id), None)
+        if account:
+            return account
+        return next((provider for provider in PROVIDERS if provider["id"] == account_id), None)
+    return next((item for item in settings.get("accounts", [])
+                 if item.get("enabled") and item.get("email")), None)
+
+
+def open_mail_in_web(account_id: str, mail: dict | None = None) -> None:
+    account = get_account_for_open(account_id)
+    url = resolve_webmail_url(account, mail)
+    if url:
+        webbrowser.open(url)
+    else:
+        logging.warning("No webmail URL configured for mailbox %s", account_id)
+
+
+def populate_mailbox_menu(menu: tk.Menu, callback, on_configure=None) -> None:
+    """Rebuild a dropdown using configured accounts and provider quick links."""
+    menu.delete(0, "end")
+    settings = load_settings()
+    accounts = [account for account in settings.get("accounts", [])
+                if account.get("enabled") and account.get("email")]
+    configured_provider_ids = {account.get("provider_id", account.get("id")) for account in accounts}
+
+    if accounts:
+        menu.add_command(label="已配置邮箱", state="disabled")
+        for account in accounts:
+            label = f'{account.get("name", "邮箱")}  ·  {account.get("email", "")}'
+            menu.add_command(label=label, command=lambda aid=account["id"]: callback(aid))
+        menu.add_separator()
+        extras = [provider for provider in PROVIDERS if provider["id"] not in configured_provider_ids]
+    else:
+        menu.add_command(label="尚未配置邮箱，可先打开网页版", state="disabled")
+        extras = list(PROVIDERS)
+
+    if extras:
+        more_menu = tk.Menu(menu, tearoff=0)
+        for provider in extras:
+            more_menu.add_command(label=provider["name"], command=lambda pid=provider["id"]: callback(pid))
+        menu.add_cascade(label="其他邮箱网站", menu=more_menu)
+    if on_configure:
+        menu.add_separator()
+        menu.add_command(label="邮箱设置…", command=on_configure)
 
 
 def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
