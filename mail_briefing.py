@@ -647,8 +647,16 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
     summary = "\n".join(summary_parts) or "没有发现新邮件"
     title = f"{digest_title}：发现 {len(mails)} 封新邮件" if mails else "邮件助手：部分邮箱检查失败"
     try:
-        from winotify import Notification
-        Notification(app_id=APP_TITLE, title=title, msg=summary[:230], duration="short").show()
+        if os.name == "nt":
+            from winotify import Notification
+            Notification(app_id=APP_TITLE, title=title, msg=summary[:230], duration="short").show()
+        elif sys.platform == "darwin":
+            safe_title = title.replace("\\", "\\\\").replace('"', '\\"').replace("\\n", " ")
+            safe_summary = summary[:230].replace("\\", "\\\\").replace('"', '\\"').replace("\\n", " ")
+            script = f'display notification "{safe_summary}" with title "{safe_title}"'
+            subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True, timeout=10)
+        else:
+            logging.info("Notification: %s | %s", title, summary[:230])
     except Exception as exc:
         logging.warning("Toast notification unavailable: %s", type(exc).__name__)
     logging.info("Check completed: %d new messages; %d account errors", len(mails), len(errors))
@@ -1077,7 +1085,7 @@ class MailBriefingWidget:
 
             preview = str(mail.get("preview", "") or "").strip()
             if not preview:
-                preview = "暂无正文摘要；点击此邮件可打开原邮箱查看。"
+                preview = "暂无缓存摘要；点击此邮件可从邮箱读取正文。"
             preview_label = tk.Label(
                 row, text=preview, bg=self.ROW, fg="#475467",
                 font=(UI_FONT, 9), anchor="w", justify="left",
@@ -1545,7 +1553,7 @@ class MailBriefingApp:
 
         preview = str(mail.get("preview", "") or "").strip()
         if not preview:
-            preview = "这封邮件尚无缓存的正文摘要；可双击邮件打开原邮箱查看。"
+            preview = "这封邮件尚无缓存摘要；双击即可从邮箱读取正文。"
         self.preview_var.set(
             f"邮箱：{mail.get('account_name', '未知邮箱')}    "
             f"发件人：{mail.get('sender', '未知发件人')}\n"
