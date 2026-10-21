@@ -429,7 +429,7 @@ class MailBriefingWidget:
         widget = tk.Label(
             parent, text=label, bg=self.PANEL,
             fg=self.ACCENT if accent else self.MUTED,
-            activebackground=self.ROW, cursor="hand2",
+            cursor="hand2",
             font=("Microsoft YaHei UI", 9, "bold"),
             padx=7, pady=3
         )
