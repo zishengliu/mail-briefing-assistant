@@ -2305,7 +2305,7 @@ class MailBriefingApp:
         show_mail_detail(self.root, mail, self.open_webmail)
 
     def popup_mail_menu(self, button, menu=None):
-        show_mailbox_popup(button, self.open_webmail, self.open_settings)
+        show_mailbox_popup(button, self.open_webmail)
 
     def open_webmail(self, account_id=None):
         if account_id:
