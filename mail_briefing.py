@@ -178,6 +178,7 @@ SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "state.json"
 DIGEST_PATH = DATA_DIR / "latest_digest.json"
 LOG_PATH = DATA_DIR / "mail-briefing.log"
+REFRESH_REQUEST_PATH = DATA_DIR / "refresh.request"
 
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
@@ -983,6 +984,9 @@ class MailBriefingWidget:
         self.expanded = False
         self.drag_origin = None
         self.auto_collapse_job = None
+        self._refresh_in_progress = False
+        self._queued_manual_refresh = False
+        self._queued_daily_refresh = None
         self.last_mails = []
         self.last_errors = []
         self.latest_digest = load_digest()
@@ -1003,6 +1007,8 @@ class MailBriefingWidget:
         self._render_details()
         self._place(expanded=False)
         self._start_preview_hydration()
+        self.root.after(150, self._refresh_on_open)
+        self.root.after(1000, self._poll_refresh_request)
         self.root.after(1200, self._tick)
 
     def _button(self, parent, label, command, accent=False):
@@ -1422,6 +1428,118 @@ class MailBriefingWidget:
 
 
 
+    def _refresh_on_open(self):
+        """Check immediately on every fresh widget launch; elapsed daily slots are covered by this check."""
+        try:
+            settings = load_settings()
+            state = load_state()
+            mark_elapsed_slots_covered(state, settings, datetime.now().astimezone())
+            save_state(state)
+            configured = any(account.get("enabled") and account.get("email") for account in settings["accounts"])
+            if configured:
+                self._start_refresh(reason="open", daily=False)
+            else:
+                self._update_summary()
+        except Exception:
+            logging.warning("Startup mail refresh could not be started", exc_info=True)
+
+    def _poll_refresh_request(self):
+        """A second click on the desktop shortcut requests a refresh in the existing widget."""
+        try:
+            if REFRESH_REQUEST_PATH.exists():
+                REFRESH_REQUEST_PATH.unlink(missing_ok=True)
+                self._start_refresh(reason="reopen", daily=False)
+        except Exception:
+            logging.debug("Could not consume widget refresh request", exc_info=True)
+        try:
+            self.root.after(1000, self._poll_refresh_request)
+        except tk.TclError:
+            pass
+
+    def _start_refresh(self, reason="open", daily=False, slot_keys=None):
+        slot_keys = list(slot_keys or [])
+        if self._refresh_in_progress:
+            if daily:
+                queued = self._queued_daily_refresh or {"reason": reason, "slot_keys": []}
+                queued["slot_keys"] = sorted(set(queued["slot_keys"]) | set(slot_keys))
+                queued["reason"] = reason
+                self._queued_daily_refresh = queued
+            else:
+                self._queued_manual_refresh = True
+            return
+
+        settings = load_settings()
+        if not any(account.get("enabled") and account.get("email") for account in settings["accounts"]):
+            return
+
+        self._refresh_in_progress = True
+        self.summary_label.configure(text="正在更新今日新邮件……")
+        self._update_summary()
+
+        def worker():
+            error_messages = []
+            succeeded = False
+            try:
+                state = load_state()
+                _, error_messages = do_check(settings, state, notify=bool(daily), daily=bool(daily))
+                succeeded = True
+            except Exception as exc:
+                error_messages = [f"邮件更新失败：{exc}"]
+                logging.warning("Mail refresh failed during %s: %s", reason, type(exc).__name__, exc_info=True)
+
+            current_state = load_state()
+            if daily and succeeded:
+                completed = set(current_state.get("completed_slots", []))
+                completed.update(slot_keys)
+                current_state["completed_slots"] = sorted(completed)
+                save_state(current_state)
+            digest = load_digest()
+            pending = today_only([_restore_mail(item) for item in current_state.get("pending_digest", [])])
+            digest_today = str(digest.get("generated_at", ""))[:10] == datetime.now().astimezone().date().isoformat()
+            digest_mails = today_only([_restore_mail(item) for item in digest.get("mails", [])]) if digest_today else []
+
+            combined = {}
+            for mail in digest_mails + pending:
+                combined[(str(mail.get("account_id", "")), str(mail.get("uid", "")))] = _stored_mail(mail)
+            display_digest = {
+                "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "mails": list(combined.values()),
+                "errors": digest.get("errors", []) if daily and digest_today else error_messages,
+            }
+
+            def finish():
+                self._refresh_in_progress = False
+                if daily and succeeded:
+                    self._pending_signature = tuple()
+                    self.show_digest(load_digest(), auto_collapse=True)
+                elif display_digest["mails"] or display_digest["errors"]:
+                    signature = tuple((item.get("account_id"), item.get("uid")) for item in display_digest["mails"])
+                    if signature != self._pending_signature or reason == "open":
+                        self._pending_signature = signature
+                        self.show_digest(display_digest, auto_collapse=bool(display_digest["mails"]))
+                    else:
+                        self._set_digest(display_digest)
+                else:
+                    self._set_digest(display_digest)
+                    self.collapse_details()
+                    self.summary_label.configure(text="已更新 · 今日暂无新邮件")
+                queued_daily = self._queued_daily_refresh
+                queued_manual = self._queued_manual_refresh
+                self._queued_daily_refresh = None
+                self._queued_manual_refresh = False
+                if queued_daily:
+                    self.root.after(150, lambda q=queued_daily: self._start_refresh(
+                        reason=q["reason"], daily=True, slot_keys=q["slot_keys"]
+                    ))
+                elif queued_manual:
+                    self.root.after(150, lambda: self._start_refresh(reason="reopen", daily=False))
+            try:
+                self.root.after(0, finish)
+            except tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _tick(self):
         try:
             now = datetime.now()
@@ -1434,25 +1552,23 @@ class MailBriefingWidget:
             self._update_summary()
             settings = load_settings()
             state = load_state()
-            minute_key = now.strftime("%Y-%m-%d %H:%M")
-            due = datetime.strptime(settings.get("daily_time", "08:00"), "%H:%M").time()
             configured = any(a.get("enabled") and a.get("email") for a in settings["accounts"])
-            if configured and now.time() >= due and state.get("last_digest_date") != now.date().isoformat():
-                # Avoid duplicate checks during the same minute if a prior attempt raises.
-                if getattr(self, "_last_attempt_minute", "") != minute_key:
-                    self._last_attempt_minute = minute_key
-                    do_check(settings, state, notify=True, daily=True)
-                    state = load_state()
-                    state["last_digest_date"] = now.date().isoformat()
-                    save_state(state)
-                    digest = load_digest()
-                    self._pending_signature = tuple()
-                    self.show_digest(digest, auto_collapse=True)
+            completed = set(state.get("completed_slots", []))
+            due_slots = []
+            for time_text in configured_daily_times(settings):
+                due_time = datetime.strptime(time_text, "%H:%M").time()
+                key = daily_slot_key(now.date(), time_text)
+                if now.time() >= due_time and key not in completed:
+                    due_slots.append((time_text, key))
+            if configured and due_slots:
+                # If the computer slept through multiple slots, one refresh covers the elapsed slots.
+                slot_keys = [key for _, key in due_slots]
+                latest_slot = due_slots[-1][0]
+                self._start_refresh(reason=latest_slot, daily=True, slot_keys=slot_keys)
             else:
-                # Reflect mails collected by the separate settings window's manual check.
-                pending = list(state.get("pending_digest", []))
+                pending = today_only([_restore_mail(item) for item in state.get("pending_digest", [])])
                 signature = tuple((item.get("account_id"), item.get("uid")) for item in pending)
-                if pending and signature != self._pending_signature:
+                if pending and signature != self._pending_signature and not self._refresh_in_progress:
                     self._pending_signature = signature
                     digest = {
                         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
