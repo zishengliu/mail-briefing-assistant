@@ -267,9 +267,11 @@ def _stored_mail(mail: dict) -> dict:
         "uid": mail.get("uid"),
         "account_id": mail.get("account_id"),
         "account_name": mail.get("account_name", ""),
+        "provider_id": mail.get("provider_id", mail.get("account_id", "")),
         "subject": mail.get("subject", "（无主题）"),
         "sender": mail.get("sender", "未知发件人"),
-        "category": mail.get("category", "个人与其他"),
+        "category": normalize_category(mail.get("category", "其他往来")),
+        "priority": mail.get("priority", classify_priority(mail)),
         "date": date_value,
         "preview": str(mail.get("preview", "") or "")[:220],
     }
@@ -282,6 +284,8 @@ def _restore_mail(record: dict) -> dict:
             mail["date"] = datetime.fromisoformat(date_value)
         except ValueError:
             mail["date"] = None
+    mail["category"] = normalize_category(mail.get("category", "其他往来"))
+    mail.setdefault("priority", classify_priority(mail))
     return mail
 
 
@@ -376,7 +380,7 @@ def _part_text(part) -> str:
     return str(value).strip()
 
 
-def extract_body(message, limit: int = 450) -> str:
+def extract_body(message, limit: int = 450, preserve_lines: bool = False) -> str:
     """Prefer text/plain, otherwise extract visible text from HTML; ignore attachments."""
     plain_parts = []
     html_parts = []
@@ -398,7 +402,12 @@ def extract_body(message, limit: int = 450) -> str:
     except Exception:
         logging.debug("Could not extract message body", exc_info=True)
     chosen = plain_parts if plain_parts else html_parts
-    text = re.sub(r"\s+", " ", " ".join(chosen)).strip()
+    if preserve_lines:
+        text = "\n".join(chosen)
+        text = re.sub(r"[ \t\u00a0]+", " ", text)
+        text = re.sub(r"\n[ \t]*\n+", "\n\n", text).strip()
+    else:
+        text = re.sub(r"\s+", " ", " ".join(chosen)).strip()
     return text[:limit]
 
 
@@ -428,27 +437,6 @@ def parse_message(raw: bytes, uid: int, account: dict) -> dict:
     mail["category"] = classify(mail)
     mail["priority"] = classify_priority(mail)
     return mail
-
-
-def classify(mail: dict) -> str:
-    haystack = " ".join(str(mail.get(key, "") or "") for key in
-                        ("subject", "sender", "sender_address", "preview")).lower()
-    # If the message has an urgent action, surface it before topical categories.
-    for category in CATEGORY_ORDER[:-1]:
-        if any(term.lower() in haystack for term in CATEGORY_RULES[category]):
-            return category
-    return "其他往来"
-
-
-def classify_priority(mail: dict) -> str:
-    haystack = " ".join(str(mail.get(key, "") or "") for key in
-                        ("subject", "sender", "sender_address", "preview")).lower()
-    if any(term.lower() in haystack for term in PRIORITY_TERMS["高"]):
-        return "高"
-    if any(term.lower() in haystack for term in PRIORITY_TERMS["中"]):
-        return "中"
-    return "普通"
-
 
 
 def imap_connect(account: dict):
