@@ -67,6 +67,30 @@ class MailAssistantTests(unittest.TestCase):
         filtered = app.today_only([current, yesterday, unknown], today)
         self.assertEqual([item["subject"] for item in filtered], ["today"])
 
+    def test_daily_schedule_defaults_to_eight_and_seventeen(self):
+        settings = app.default_settings()
+        self.assertEqual(app.configured_daily_times(settings), ["08:00", "17:00"])
+
+    def test_legacy_single_time_keeps_custom_morning_and_adds_evening(self):
+        old_path = app.SETTINGS_PATH
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                app.SETTINGS_PATH = Path(directory) / "settings.json"
+                app.SETTINGS_PATH.write_text('{"daily_time": "07:45", "accounts": []}', encoding="utf-8")
+                settings = app.load_settings()
+                self.assertEqual(app.configured_daily_times(settings), ["07:45", "17:00"])
+        finally:
+            app.SETTINGS_PATH = old_path
+
+    def test_gmail_web_fallback_searches_by_subject(self):
+        url = app.resolve_webmail_url(
+            self.account,
+            {"subject": "Meeting tomorrow", "sender_address": "notice@example.edu"},
+        )
+        self.assertIn("mail.google.com", url)
+        self.assertIn("#search/", url)
+        self.assertIn("Meeting", url)
+
     def test_custom_imap_account_survives_settings_roundtrip(self):
         old_path = app.SETTINGS_PATH
         try:
