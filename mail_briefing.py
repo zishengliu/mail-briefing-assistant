@@ -417,6 +417,15 @@ class MailBriefingWidget:
         self.last_mails = []
         self.last_errors = []
         self.latest_digest = load_digest()
+        initial_state = load_state()
+        initial_pending = list(initial_state.get("pending_digest", []))
+        self._pending_signature = tuple((item.get("account_id"), item.get("uid")) for item in initial_pending)
+        if initial_pending:
+            self.latest_digest = {
+                "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "mails": initial_pending,
+                "errors": [],
+            }
         self.last_mails = [_restore_mail(item) for item in self.latest_digest.get("mails", [])]
         self.last_errors = self.latest_digest.get("errors", [])
         self._build()
@@ -699,15 +708,26 @@ class MailBriefingWidget:
                     state["last_digest_date"] = now.date().isoformat()
                     save_state(state)
                     digest = load_digest()
+                    self._pending_signature = tuple()
                     self.show_digest(digest, auto_collapse=True)
-            # If the app was started after the morning check, keep the latest digest accessible.
+            else:
+                # Reflect mails collected by the separate settings window's manual check.
+                pending = list(state.get("pending_digest", []))
+                signature = tuple((item.get("account_id"), item.get("uid")) for item in pending)
+                if pending and signature != self._pending_signature:
+                    self._pending_signature = signature
+                    digest = {
+                        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                        "mails": pending,
+                        "errors": [],
+                    }
+                    self.show_digest(digest, auto_collapse=True)
         except Exception as exc:
             logging.warning("Desktop widget scheduler error: %s", type(exc).__name__)
         try:
             self.root.after(30000, self._tick)
         except tk.TclError:
             pass
-
 
 def background_loop() -> None:
     """Run the desktop mini-widget and its local daily scheduler."""
