@@ -6,8 +6,8 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! python3 -c 'import tkinter, keyring' >/dev/null 2>&1; then
-  echo "Python is missing Tkinter or keyring. Install a Python 3.11+ build with Tcl/Tk support, then rerun this installer."
+if ! python3 -c 'import tkinter' >/dev/null 2>&1; then
+  echo "Python is missing Tkinter. Install a Python 3.11+ build with Tcl/Tk support, then rerun this installer."
   echo "A python.org macOS installer is recommended."
   exit 1
 fi
