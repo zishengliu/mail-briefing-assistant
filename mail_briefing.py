@@ -27,7 +27,7 @@ try:
 except ImportError:
     keyring = None
 
-APP_TITLE = "邮件晨报助手"
+APP_TITLE = "邮件助手"
 SERVICE_NAME = "MailBriefingAssistant"
 PROVIDERS = [
     {"id": "gmail", "name": "Gmail", "host": "imap.gmail.com", "port": 993,
@@ -453,7 +453,7 @@ class MailBriefingWidget:
         header = tk.Frame(self.card, bg=self.BG)
         header.pack(fill="x", padx=12, pady=(9, 2))
         self.title_label = tk.Label(
-            header, text="✉  邮件晨报", bg=self.BG, fg=self.ACCENT,
+            header, text="✉  邮件助手", bg=self.BG, fg=self.ACCENT,
             font=("Microsoft YaHei UI", 11, "bold"), cursor="fleur"
         )
         self.title_label.pack(side="left")
@@ -753,7 +753,7 @@ class MailBriefingApp:
     def build_ui(self):
         wrapper = ttk.Frame(self.root, padding=14)
         wrapper.pack(fill="both", expand=True)
-        ttk.Label(wrapper, text="邮件晨报助手", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(wrapper, text="邮件助手", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
         ttk.Label(wrapper, text="汇总 Gmail、QQ 邮箱与清华邮箱的新邮件；本机分类，不上传邮件内容。", foreground="#555").pack(anchor="w", pady=(2, 12))
         self.notebook = ttk.Notebook(wrapper)
         self.notebook.pack(fill="both", expand=True)
@@ -946,7 +946,8 @@ class MailBriefingApp:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--background", action="store_true", help="run as the scheduled background notifier")
+    parser.add_argument("--background", action="store_true", help="run the desktop widget at Windows logon")
+    parser.add_argument("--widget", action="store_true", help="open the desktop widget")
     args = parser.parse_args()
     if keyring is None:
         print("Missing dependency: keyring. Install requirements.txt first.")
@@ -957,7 +958,7 @@ def main():
             except Exception:
                 pass
         return 2
-    if args.background:
+    if args.background or args.widget:
         try:
             background_loop()
         except KeyboardInterrupt:
