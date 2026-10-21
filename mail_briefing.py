@@ -458,7 +458,8 @@ def imap_connect(account: dict):
         raise RuntimeError("尚未保存客户端密码/授权码，请先在设置页填写并保存")
     conn = imaplib.IMAP4_SSL(account["host"], int(account.get("port", 993)), timeout=25)
     try:
-        conn.login(account["email"], secret)
+        login_name = account.get("username") or account["email"]
+        conn.login(login_name, secret)
         typ, _ = conn.select("INBOX", readonly=True)
         if typ != "OK":
             raise RuntimeError("无法打开收件箱")
@@ -1342,6 +1343,7 @@ class MailBriefingApp:
         self.account_vars = {}
         self.password_vars = {}
         self.email_vars = {}
+        self.username_vars = {}
         self.enabled_vars = {}
         self.build_ui()
         self.render_saved_digest()
@@ -1392,16 +1394,21 @@ class MailBriefingApp:
             card.pack(fill="x", pady=4)
             enabled = tk.BooleanVar(value=account.get("enabled", True))
             email_var = tk.StringVar(value=account.get("email", ""))
+            username_var = tk.StringVar(value=account.get("username", ""))
             password_var = tk.StringVar()
             self.enabled_vars[account["id"]] = enabled
             self.email_vars[account["id"]] = email_var
+            self.username_vars[account["id"]] = username_var
             self.password_vars[account["id"]] = password_var
             ttk.Checkbutton(card, text="启用", variable=enabled).grid(row=0, column=0, sticky="w", padx=(0, 10))
             ttk.Label(card, text="邮箱地址").grid(row=0, column=1, sticky="e")
             ttk.Entry(card, textvariable=email_var, width=34).grid(row=0, column=2, sticky="ew", padx=5)
             ttk.Label(card, text="客户端密码 / 授权码").grid(row=1, column=1, sticky="e", pady=(5, 0))
             ttk.Entry(card, textvariable=password_var, width=34, show="•").grid(row=1, column=2, sticky="ew", padx=5, pady=(5, 0))
-            ttk.Label(card, text=help_text, wraplength=690, foreground="#555").grid(row=2, column=1, columnspan=2, sticky="w", padx=5, pady=(5, 0))
+            ttk.Label(card, text="IMAP 登录用户名（可选）").grid(row=2, column=1, sticky="e", pady=(5, 0))
+            ttk.Entry(card, textvariable=username_var, width=34).grid(row=2, column=2, sticky="ew", padx=5, pady=(5, 0))
+            ttk.Label(card, text="默认使用邮箱地址；iCloud 等服务可能要求填写 @ 前面的用户名。", foreground="#667085").grid(row=3, column=1, columnspan=2, sticky="w", padx=5, pady=(3, 0))
+            ttk.Label(card, text=help_text, wraplength=690, foreground="#555").grid(row=4, column=1, columnspan=2, sticky="w", padx=5, pady=(5, 0))
             card.columnconfigure(2, weight=1)
 
         timing = ttk.LabelFrame(content, text="每日提醒", padding=8)
@@ -1426,6 +1433,7 @@ class MailBriefingApp:
         self.account_vars = {}
         self.password_vars = {}
         self.email_vars = {}
+        self.username_vars = {}
         self.enabled_vars = {}
         self.build_settings_tab()
 
@@ -1449,6 +1457,7 @@ class MailBriefingApp:
         port_var = tk.StringVar(value=str(PROVIDERS[0]["port"]))
         url_var = tk.StringVar(value=PROVIDERS[0]["url"])
         email_var = tk.StringVar()
+        username_var = tk.StringVar()
         secret_var = tk.StringVar()
         help_var = tk.StringVar(value=PROVIDERS[0]["help"])
 
@@ -1461,16 +1470,17 @@ class MailBriefingApp:
             ("IMAP SSL 主机", host_var, False),
             ("端口", port_var, False),
             ("网页版地址（可选）", url_var, False),
-            ("完整邮箱地址", email_var, False),
+            ("邮箱地址", email_var, False),
+            ("IMAP 登录用户名（可选）", username_var, False),
             ("客户端密码 / 授权码", secret_var, True),
         ]
         for index, (label, var, secret) in enumerate(fields, start=1):
             ttk.Label(form, text=label).grid(row=index, column=0, sticky="e", padx=(0, 8), pady=5)
             ttk.Entry(form, textvariable=var, width=45, show="•" if secret else "").grid(row=index, column=1, sticky="ew", pady=5)
 
-        ttk.Label(form, textvariable=help_var, wraplength=540, foreground="#555").grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
+        ttk.Label(form, textvariable=help_var, wraplength=540, foreground="#555").grid(row=8, column=0, columnspan=2, sticky="w", pady=(6, 8))
         ttk.Label(form, text="仅支持 IMAP SSL + 客户端密码/授权码；需要 OAuth2 的邮箱暂不支持直接连接。",
-                  wraplength=540, foreground="#9A3412").grid(row=8, column=0, columnspan=2, sticky="w")
+                  wraplength=540, foreground="#9A3412").grid(row=9, column=0, columnspan=2, sticky="w")
 
         previous_auto_name = [name_var.get()]
 
@@ -1531,6 +1541,7 @@ class MailBriefingApp:
                 "port": port,
                 "url": url,
                 "email": email_addr,
+                "username": username_var.get().strip(),
                 "enabled": True,
             }
             try:
@@ -1641,6 +1652,7 @@ class MailBriefingApp:
             email_addr = self.email_vars[aid].get().strip()
             secret = self.password_vars[aid].get()
             account["email"] = email_addr
+            account["username"] = self.username_vars[aid].get().strip()
             account["enabled"] = self.enabled_vars[aid].get()
             if email_addr and "@" not in email_addr:
                 messagebox.showerror("邮箱地址错误", f"{account['name']}：请输入完整的邮箱地址。")
