@@ -73,6 +73,15 @@ PROVIDERS = [
     {"id": "fastmail", "name": "Fastmail", "host": "imap.fastmail.com", "port": 993,
      "url": "https://www.fastmail.com/",
      "help": "使用 Fastmail 的应用专用密码，不要使用网页登录密码。"},
+    {"id": "yeah", "name": "网易 yeah.net 邮箱", "host": "imap.yeah.net", "port": 993,
+     "url": "https://www.yeah.net/",
+     "help": "先开启 IMAP/SMTP，并生成客户端授权码。"},
+    {"id": "foxmail", "name": "Foxmail 邮箱", "host": "imap.qq.com", "port": 993,
+     "url": "https://mail.qq.com/",
+     "help": "Foxmail.com 地址使用 QQ 邮箱服务器；按 QQ 邮箱设置开启 IMAP 并使用授权码。"},
+    {"id": "139", "name": "中国移动 139 邮箱", "host": "imap.139.com", "port": 993,
+     "url": "https://mail.10086.cn/",
+     "help": "按 139 邮箱设置开启 IMAP，并使用客户端授权码。"},
 ]
 DEFAULT_PROVIDER_IDS = {"gmail", "qq", "tsinghua"}
 CATEGORY_ORDER = ["需尽快处理", "日程与会议", "课程与学术", "求职与实习", "账单与账户", "通知与订阅", "其他往来"]
@@ -180,7 +189,7 @@ def default_settings() -> dict:
         "accounts": [{
             "id": p["id"], "provider_id": p["id"], "name": p["name"],
             "host": p["host"], "port": p["port"], "url": p["url"],
-            "email": "", "enabled": True
+            "email": "", "username": "", "enabled": True
         } for p in providers],
     }
 
@@ -212,7 +221,7 @@ def load_settings() -> dict:
         old = saved_accounts.get(account["id"], {})
         merged.append({
             **account,
-            **{key: old[key] for key in ("name", "host", "port", "url", "email", "enabled", "provider_id") if key in old},
+            **{key: old[key] for key in ("name", "host", "port", "url", "email", "username", "enabled", "provider_id") if key in old},
             "provider_id": old.get("provider_id", old.get("id", account["id"])),
             "enabled": bool(old.get("enabled", account.get("enabled", True))),
         })
@@ -232,6 +241,7 @@ def load_settings() -> dict:
             "port": int(old.get("port") or 993),
             "url": old.get("url", provider["url"] if provider else ""),
             "email": old.get("email", ""),
+            "username": old.get("username", ""),
             "enabled": bool(old.get("enabled", True)),
         }
         merged.append(normalized)
