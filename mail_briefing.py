@@ -316,7 +316,7 @@ def check_account(account: dict, state: dict, test_only: bool = False) -> tuple[
             pass
 
 
-def send_notification(mails: list[dict], errors: list[str], digest_title: str = "邮件晨报") -> None:
+def send_notification(mails: list[dict], errors: list[str], digest_title: str = "邮件助手") -> None:
     if not mails and not errors:
         logging.info("Daily check completed: no new messages")
         return
@@ -329,7 +329,7 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
     if errors:
         summary_parts.append(f"{len(errors)} 个邮箱检查失败，请打开助手查看")
     summary = "\\n".join(summary_parts) or "没有发现新邮件"
-    title = f"{digest_title}：发现 {len(mails)} 封新邮件" if mails else "邮件晨报：部分邮箱检查失败"
+    title = f"{digest_title}：发现 {len(mails)} 封新邮件" if mails else "邮件助手：部分邮箱检查失败"
     try:
         from winotify import Notification
         Notification(app_id=APP_TITLE, title=title, msg=summary[:230], duration="short").show()
@@ -760,7 +760,7 @@ class MailBriefingApp:
         self.settings_tab = ttk.Frame(self.notebook, padding=12)
         self.inbox_tab = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.settings_tab, text="邮箱与定时设置")
-        self.notebook.add(self.inbox_tab, text="邮件晨报")
+        self.notebook.add(self.inbox_tab, text="晨报记录")
         self.build_settings_tab()
         self.build_inbox_tab()
         bottom = ttk.Frame(wrapper)
