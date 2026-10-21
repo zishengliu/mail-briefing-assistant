@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import subprocess
 import threading
 import time
 import webbrowser
@@ -392,11 +393,296 @@ def test_account(account: dict) -> str:
             pass
 
 
-def background_loop() -> None:
-    """Wait for the configured local morning time, then produce one digest per day."""
-    logging.info("Background scheduler started")
-    last_minute = ""
-    while True:
+class MailBriefingWidget:
+    """Small always-on-top desktop card with collapsible email details."""
+
+    BG = "#0B1220"
+    PANEL = "#111B2D"
+    ROW = "#18253A"
+    TEXT = "#F4F7FB"
+    MUTED = "#AAB6C8"
+    ACCENT = "#B6FF4A"
+    BORDER = "#29374C"
+
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title(APP_TITLE + " · 桌面小插件")
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
+        self.root.configure(bg=self.BG)
+        self.root.resizable(False, False)
+        self.expanded = False
+        self.drag_origin = None
+        self.auto_collapse_job = None
+        self.last_mails = []
+        self.last_errors = []
+        self.latest_digest = load_digest()
+        self.last_mails = [_restore_mail(item) for item in self.latest_digest.get("mails", [])]
+        self.last_errors = self.latest_digest.get("errors", [])
+        self._build()
+        self._update_summary()
+        self._render_details()
+        self._place(expanded=False)
+        self.root.after(1200, self._tick)
+
+    def _button(self, parent, label, command, accent=False):
+        widget = tk.Label(
+            parent, text=label, bg=self.PANEL,
+            fg=self.ACCENT if accent else self.MUTED,
+            activebackground=self.ROW, cursor="hand2",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            padx=7, pady=3
+        )
+        widget.bind("<Button-1>", lambda event: command())
+        widget.bind("<Enter>", lambda event: widget.configure(fg=self.TEXT))
+        widget.bind("<Leave>", lambda event: widget.configure(fg=self.ACCENT if accent else self.MUTED))
+        return widget
+
+    def _build(self):
+        self.card = tk.Frame(self.root, bg=self.BG, highlightthickness=1, highlightbackground=self.BORDER)
+        self.card.pack(fill="both", expand=True)
+        header = tk.Frame(self.card, bg=self.BG)
+        header.pack(fill="x", padx=12, pady=(9, 2))
+        self.title_label = tk.Label(
+            header, text="✉  邮件晨报", bg=self.BG, fg=self.ACCENT,
+            font=("Microsoft YaHei UI", 11, "bold"), cursor="fleur"
+        )
+        self.title_label.pack(side="left")
+        self.title_label.bind("<ButtonPress-1>", self._drag_start)
+        self.title_label.bind("<B1-Motion>", self._drag_move)
+        self.title_label.bind("<ButtonRelease-1>", self._drag_end)
+        self.expand_button = self._button(header, "详情 ▾", self.toggle_details, accent=True)
+        self.expand_button.pack(side="right")
+        self.settings_button = self._button(header, "设置", self.open_settings)
+        self.settings_button.pack(side="right", padx=(0, 4))
+        self.min_button = self._button(header, "—", self.collapse_details)
+        self.min_button.pack(side="right", padx=(0, 4))
+        self.quit_button = self._button(header, "×", self.quit)
+        self.quit_button.pack(side="right", padx=(0, 4))
+        self.summary_label = tk.Label(
+            self.card, text="", bg=self.BG, fg=self.MUTED,
+            font=("Microsoft YaHei UI", 9), justify="left", anchor="w",
+            wraplength=400
+        )
+        self.summary_label.pack(fill="x", padx=13, pady=(1, 8))
+        self.content = tk.Frame(self.card, bg=self.BG)
+        self.section_label = tk.Label(
+            self.content, text="新邮件详情  ·  点击邮件可打开对应邮箱",
+            bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 9, "bold"), anchor="w"
+        )
+        self.section_label.pack(fill="x", padx=12, pady=(2, 7))
+        list_holder = tk.Frame(self.content, bg=self.BG)
+        list_holder.pack(fill="both", expand=True, padx=10)
+        self.canvas = tk.Canvas(list_holder, bg=self.BG, highlightthickness=0, bd=0)
+        self.scrollbar = tk.Scrollbar(list_holder, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.list_frame = tk.Frame(self.canvas, bg=self.BG)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+        self.list_frame.bind("<Configure>", lambda event: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda event: self.canvas.itemconfigure(self.canvas_window, width=event.width))
+        self.canvas.bind_all("<MouseWheel>", self._mousewheel)
+        footer = tk.Frame(self.content, bg=self.BG)
+        footer.pack(fill="x", padx=12, pady=(7, 10))
+        tk.Label(
+            footer, text="邮件仅在本机分类 · 不上传邮件内容",
+            bg=self.BG, fg="#8291A8", font=("Microsoft YaHei UI", 8)
+        ).pack(side="left")
+        self.open_mail_button = self._button(footer, "打开邮箱 ↗", self.open_webmail, accent=True)
+        self.open_mail_button.pack(side="right")
+
+    def _place(self, expanded=None):
+        if expanded is None:
+            expanded = self.expanded
+        width = 430 if expanded else 355
+        height = 500 if expanded else 94
+        self.root.update_idletasks()
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        x = max(8, screen_w - width - 22)
+        y = max(8, screen_h - height - 58)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _drag_start(self, event):
+        self.drag_origin = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
+
+    def _drag_move(self, event):
+        if self.drag_origin:
+            x = max(0, event.x_root - self.drag_origin[0])
+            y = max(0, event.y_root - self.drag_origin[1])
+            self.root.geometry(f"+{x}+{y}")
+
+    def _drag_end(self, event):
+        self.drag_origin = None
+
+    def _mousewheel(self, event):
+        if self.expanded:
+            try:
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except tk.TclError:
+                pass
+
+    def _cancel_auto_collapse(self):
+        if self.auto_collapse_job is not None:
+            try:
+                self.root.after_cancel(self.auto_collapse_job)
+            except tk.TclError:
+                pass
+            self.auto_collapse_job = None
+
+    def _update_summary(self):
+        settings = load_settings()
+        due_time = settings.get("daily_time", "08:00")
+        date_today = datetime.now().date().isoformat()
+        generated = str(self.latest_digest.get("generated_at", ""))
+        mail_count = len(self.last_mails)
+        if generated[:10] == date_today:
+            text = f"今日晨报：{mail_count} 封新邮件"
+            if self.last_errors:
+                text += f" · {len(self.last_errors)} 个邮箱需检查"
+            text += "  ·  点击“详情”展开"
+        else:
+            configured = sum(1 for a in settings["accounts"] if a.get("enabled") and a.get("email"))
+            if configured:
+                text = f"每天 {due_time} 自动汇总 · 已配置 {configured} 个邮箱"
+            else:
+                text = "先点击“设置”配置邮箱 · 支持 Gmail、QQ、清华邮箱"
+        self.summary_label.configure(text=text, wraplength=400 if self.expanded else 325)
+
+    def _render_details(self):
+        for child in self.list_frame.winfo_children():
+            child.destroy()
+        counts = {category: sum(1 for mail in self.last_mails if mail.get("category") == category) for category in CATEGORY_ORDER}
+        summary = "  ·  ".join(f"{category} {count}" for category, count in counts.items() if count)
+        if summary:
+            tk.Label(
+                self.list_frame, text=summary, bg=self.BG, fg=self.ACCENT,
+                font=("Microsoft YaHei UI", 8), justify="left", wraplength=380, anchor="w"
+            ).pack(fill="x", padx=3, pady=(0, 8))
+        mails = sorted(self.last_mails, key=lambda mail: mail.get("date") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        if not mails and not self.last_errors:
+            tk.Label(
+                self.list_frame, text="今天暂时没有新邮件。到设定时间后，这里会展示晨报详情。",
+                bg=self.ROW, fg=self.MUTED, font=("Microsoft YaHei UI", 9),
+                padx=12, pady=15, wraplength=360, justify="left"
+            ).pack(fill="x", padx=2, pady=2)
+        for mail in mails[:100]:
+            row = tk.Frame(self.list_frame, bg=self.ROW, highlightthickness=1, highlightbackground=self.BORDER, cursor="hand2")
+            row.pack(fill="x", padx=2, pady=3)
+            date_value = mail.get("date")
+            if isinstance(date_value, datetime):
+                date_text = date_value.astimezone().strftime("%m-%d %H:%M")
+            elif date_value:
+                date_text = str(date_value)[:16]
+            else:
+                date_text = "时间未知"
+            top = tk.Frame(row, bg=self.ROW, cursor="hand2")
+            top.pack(fill="x", padx=9, pady=(7, 2))
+            category_label = tk.Label(
+                top, text=mail.get("category", "个人与其他"), bg=self.ROW, fg=self.ACCENT,
+                font=("Microsoft YaHei UI", 8, "bold"), cursor="hand2"
+            )
+            category_label.pack(side="left")
+            date_label = tk.Label(top, text=date_text, bg=self.ROW, fg=self.MUTED, font=("Microsoft YaHei UI", 8), cursor="hand2")
+            date_label.pack(side="right")
+            sender_label = tk.Label(
+                row, text=mail.get("sender", "未知发件人"), bg=self.ROW, fg=self.MUTED,
+                font=("Microsoft YaHei UI", 8), anchor="w", justify="left", cursor="hand2"
+            )
+            sender_label.pack(fill="x", padx=9)
+            subject_label = tk.Label(
+                row, text=mail.get("subject", "（无主题）"), bg=self.ROW, fg=self.TEXT,
+                font=("Microsoft YaHei UI", 9, "bold"), anchor="w", justify="left",
+                wraplength=375, cursor="hand2"
+            )
+            subject_label.pack(fill="x", padx=9, pady=(1, 8))
+            open_callback = lambda event, account_id=mail.get("account_id"): self.open_webmail(account_id)
+            for part in (row, top, category_label, date_label, sender_label, subject_label):
+                part.bind("<Button-1>", open_callback)
+        for error in self.last_errors:
+            error_row = tk.Label(
+                self.list_frame, text="⚠ " + error, bg="#3B2025", fg="#FFC2C2",
+                font=("Microsoft YaHei UI", 8), anchor="w", justify="left",
+                wraplength=375, padx=10, pady=8
+            )
+            error_row.pack(fill="x", padx=2, pady=3)
+        self.canvas.yview_moveto(0)
+
+    def _set_digest(self, digest):
+        self.latest_digest = digest if isinstance(digest, dict) else {}
+        self.last_mails = [_restore_mail(item) for item in self.latest_digest.get("mails", [])]
+        self.last_errors = self.latest_digest.get("errors", [])
+        self._update_summary()
+        self._render_details()
+
+    def toggle_details(self):
+        self._cancel_auto_collapse()
+        if self.expanded:
+            self.collapse_details()
+        else:
+            self.expand_details(auto=False)
+
+    def expand_details(self, auto=False):
+        self._cancel_auto_collapse()
+        self.expanded = True
+        self.expand_button.configure(text="收起 ▴")
+        self.content.pack(fill="both", expand=True, padx=0, pady=(0, 1))
+        self._update_summary()
+        self._place(expanded=True)
+        if auto:
+            self.auto_collapse_job = self.root.after(25000, self.collapse_details)
+
+    def collapse_details(self):
+        self._cancel_auto_collapse()
+        self.expanded = False
+        self.expand_button.configure(text="详情 ▾")
+        self.content.pack_forget()
+        self._update_summary()
+        self._place(expanded=False)
+
+    def show_digest(self, digest, auto_collapse=True):
+        self._set_digest(digest)
+        self.root.deiconify()
+        if self.last_mails or self.last_errors:
+            self.expand_details(auto=auto_collapse)
+        else:
+            self.collapse_details()
+            self.summary_label.configure(text="今日晨报已完成 · 暂无新邮件")
+        try:
+            self.root.attributes("-topmost", True)
+            self.root.lift()
+        except tk.TclError:
+            pass
+
+    def open_settings(self):
+        self._cancel_auto_collapse()
+        script = Path(__file__).resolve()
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        try:
+            subprocess.Popen([sys.executable, str(script)], cwd=str(script.parent), **kwargs)
+        except Exception as exc:
+            logging.warning("Could not open settings window: %s", type(exc).__name__)
+
+    def open_webmail(self, account_id=None):
+        settings = load_settings()
+        if account_id is None:
+            account = next((a for a in settings["accounts"] if a.get("enabled") and a.get("email")), None)
+        else:
+            account = next((a for a in settings["accounts"] if a.get("id") == account_id), None)
+        provider = next((p for p in PROVIDERS if account and p["id"] == account.get("id")), PROVIDERS[0])
+        webbrowser.open(provider["url"])
+
+    def quit(self):
+        self._cancel_auto_collapse()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
+
+    def _tick(self):
         try:
             now = datetime.now()
             settings = load_settings()
@@ -404,15 +690,31 @@ def background_loop() -> None:
             minute_key = now.strftime("%Y-%m-%d %H:%M")
             due = datetime.strptime(settings.get("daily_time", "08:00"), "%H:%M").time()
             configured = any(a.get("enabled") and a.get("email") for a in settings["accounts"])
-            if configured and now.time() >= due and state.get("last_digest_date") != now.date().isoformat() and minute_key != last_minute:
-                do_check(settings, state, notify=True, daily=True)
-                state = load_state()
-                state["last_digest_date"] = now.date().isoformat()
-                save_state(state)
-                last_minute = minute_key
+            if configured and now.time() >= due and state.get("last_digest_date") != now.date().isoformat():
+                # Avoid duplicate checks during the same minute if a prior attempt raises.
+                if getattr(self, "_last_attempt_minute", "") != minute_key:
+                    self._last_attempt_minute = minute_key
+                    do_check(settings, state, notify=False, daily=True)
+                    state = load_state()
+                    state["last_digest_date"] = now.date().isoformat()
+                    save_state(state)
+                    digest = load_digest()
+                    self.show_digest(digest, auto_collapse=True)
+            # If the app was started after the morning check, keep the latest digest accessible.
         except Exception as exc:
-            logging.warning("Scheduler loop error: %s", type(exc).__name__)
-        time.sleep(30)
+            logging.warning("Desktop widget scheduler error: %s", type(exc).__name__)
+        try:
+            self.root.after(30000, self._tick)
+        except tk.TclError:
+            pass
+
+
+def background_loop() -> None:
+    """Run the desktop mini-widget and its local daily scheduler."""
+    logging.info("Desktop mail widget started")
+    root = tk.Tk()
+    MailBriefingWidget(root)
+    root.mainloop()
 
 class MailBriefingApp:
     def __init__(self, root: tk.Tk):
