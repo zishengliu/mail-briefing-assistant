@@ -49,14 +49,29 @@ Register-ScheduledTask -TaskName 'MailBriefingAssistant' -Action $Action -Trigge
 
 $Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 New-Item -ItemType Directory -Force -Path $Programs | Out-Null
-$ShortcutPath = Join-Path $Programs '邮件晨报助手.lnk'
-$LaunchPath = Join-Path $InstallDir 'launch.bat'
 $Shell = New-Object -ComObject WScript.Shell
-$Shortcut = $Shell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = $LaunchPath
-$Shortcut.WorkingDirectory = $InstallDir
-$Shortcut.Save()
+$WidgetLaunchPath = Join-Path $InstallDir 'launch_widget.bat'
+$SettingsLaunchPath = Join-Path $InstallDir 'launch.bat'
+
+$WidgetShortcut = $Shell.CreateShortcut((Join-Path $Programs '邮件助手.lnk'))
+$WidgetShortcut.TargetPath = $WidgetLaunchPath
+$WidgetShortcut.WorkingDirectory = $InstallDir
+$WidgetShortcut.Description = '打开邮件助手桌面悬浮小插件'
+$WidgetShortcut.Save()
+
+$SettingsShortcut = $Shell.CreateShortcut((Join-Path $Programs '邮件助手 - 设置.lnk'))
+$SettingsShortcut.TargetPath = $SettingsLaunchPath
+$SettingsShortcut.WorkingDirectory = $InstallDir
+$SettingsShortcut.Description = '打开邮件助手的邮箱与定时设置'
+$SettingsShortcut.Save()
+
+# Remove the prior shortcut name after successfully creating the new shortcuts.
+$OldShortcutPath = Join-Path $Programs '邮件晨报助手.lnk'
+if (Test-Path -LiteralPath $OldShortcutPath) {
+    Remove-Item -LiteralPath $OldShortcutPath -Force
+}
 
 Write-Host "Installation complete. Program folder: $InstallDir"
-Write-Host 'Open Mail Briefing Assistant from the Start menu and configure your mail accounts.'
-Start-Process -FilePath $LaunchPath
+Write-Host '从开始菜单打开“邮件助手”启动桌面悬浮小插件。'
+Write-Host '需要配置邮箱时，打开“邮件助手 - 设置”。'
+Start-Process -FilePath $WidgetLaunchPath
