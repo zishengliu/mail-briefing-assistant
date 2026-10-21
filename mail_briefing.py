@@ -812,7 +812,6 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
                 bind_scroll_recursively(child)
 
         bind_scroll_recursively(canvas)
-        bind_scroll_recursively(inner)
         canvas.update_idletasks()
         if inner.winfo_reqheight() > visible_height:
             scroll.pack(side="right", fill="y")
@@ -860,7 +859,7 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
     width = 400
     screen_w = popup.winfo_screenwidth()
     screen_h = popup.winfo_screenheight()
-    height = min(popup.winfo_reqheight(), max(260, screen_h - 16))
+    height = min(popup.winfo_reqheight(), max(160, screen_h - 16))
     x = min(max(8, anchor.winfo_rootx()), max(8, screen_w - width - 8))
     below_y = anchor.winfo_rooty() + anchor.winfo_height() + 4
     above_y = anchor.winfo_rooty() - height - 4
