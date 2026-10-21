@@ -481,6 +481,111 @@ def fetch_raw(conn, uid: int, body_limit: int | None = 262144) -> bytes:
     return header.rstrip(b"\r\n") + b"\r\n\r\n" + body
 
 
+def fetch_message_content(account_id: str, uid: int) -> dict:
+    """Retrieve a selected message in read-only mode for the in-app viewer."""
+    settings = load_settings()
+    account = next((item for item in settings["accounts"] if item.get("id") == account_id), None)
+    if not account:
+        raise RuntimeError("找不到这封邮件对应的邮箱配置。")
+    conn = imap_connect(account)
+    try:
+        raw = fetch_raw(conn, int(uid), body_limit=2_000_000)
+        msg = BytesParser(policy=policy.default).parsebytes(raw)
+        sender_header = decode_header(msg.get("from")) or "未知发件人"
+        display, address = parseaddr(sender_header)
+        sender = display or address or sender_header
+        body = extract_body(msg, limit=40000, preserve_lines=True)
+        if not body:
+            body = "未能提取可显示的文字。邮件可能仅包含图片、加密内容或不支持的正文格式。"
+        if len(body) >= 40000:
+            body += "\n\n（正文过长，已截取前 40,000 个字符；附件未显示。）"
+        return {
+            "subject": decode_header(msg.get("subject")) or "（无主题）",
+            "sender": sender,
+            "body": body,
+            "account_name": account.get("name", "邮箱"),
+        }
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+
+def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
+    """Open an in-app read-only message view and load its body asynchronously."""
+    win = tk.Toplevel(parent)
+    win.title("邮件正文 · 邮件助手")
+    win.geometry("720x590")
+    win.minsize(560, 420)
+    win.transient(parent)
+
+    wrapper = ttk.Frame(win, padding=14)
+    wrapper.pack(fill="both", expand=True)
+    account_name = mail.get("account_name", "未知邮箱")
+    category = normalize_category(mail.get("category", "其他往来"))
+    priority = mail.get("priority", "普通")
+    ttk.Label(wrapper, text=f"{account_name}  ·  {category}  ·  优先级：{priority}",
+              font=(UI_FONT, 10, "bold")).pack(anchor="w")
+    ttk.Label(wrapper, text=mail.get("subject", "（无主题）"),
+              font=(UI_FONT, 14, "bold"), wraplength=670).pack(anchor="w", pady=(7, 4))
+    ttk.Label(wrapper, text=f"发件人：{mail.get('sender', '未知发件人')}",
+              font=(UI_FONT, 10), wraplength=670).pack(anchor="w")
+    date_value = mail.get("date")
+    if isinstance(date_value, datetime):
+        date_text = date_value.astimezone().strftime("%Y-%m-%d %H:%M")
+    else:
+        date_text = str(date_value or "时间未知")
+    ttk.Label(wrapper, text=f"时间：{date_text}", font=(UI_FONT, 9)).pack(anchor="w", pady=(2, 8))
+
+    text_frame = ttk.Frame(wrapper)
+    text_frame.pack(fill="both", expand=True)
+    body_text = tk.Text(text_frame, wrap="word", font=(UI_FONT, 11), padx=12, pady=10,
+                        relief="solid", bd=1, bg="#FFFFFF", fg="#1F2937",
+                        insertwidth=1, spacing1=2, spacing3=4)
+    scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=body_text.yview)
+    body_text.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y")
+    body_text.pack(side="left", fill="both", expand=True)
+    body_text.insert("1.0", "正在从邮箱读取正文……")
+    body_text.configure(state="disabled")
+
+    footer = ttk.Frame(wrapper)
+    footer.pack(fill="x", pady=(9, 0))
+    ttk.Label(footer, text="只读读取 · 不会标记已读或修改原邮件",
+              font=(UI_FONT, 9)).pack(side="left")
+    if open_webmail_callback:
+        ttk.Button(
+            footer, text="在网页版打开",
+            command=lambda aid=mail.get("account_id"): open_webmail_callback(aid)
+        ).pack(side="right", padx=(6, 0))
+    ttk.Button(footer, text="关闭", command=win.destroy).pack(side="right")
+
+    def load_worker():
+        try:
+            result = fetch_message_content(str(mail.get("account_id", "")), int(mail.get("uid")))
+            error = None
+        except Exception as exc:
+            result = {"body": "暂时无法读取正文。\n\n" + str(exc)}
+            error = exc
+
+        def display_result():
+            if not win.winfo_exists():
+                return
+            if not error:
+                win.title(f"{result.get('subject', '邮件正文')} · 邮件助手")
+            body_text.configure(state="normal")
+            body_text.delete("1.0", "end")
+            body_text.insert("1.0", result["body"])
+            body_text.configure(state="disabled")
+        try:
+            win.after(0, display_result)
+        except tk.TclError:
+            pass
+
+    threading.Thread(target=load_worker, daemon=True).start()
+
+
 def check_account(account: dict, state: dict, test_only: bool = False) -> tuple[list[dict], int | None]:
     conn = imap_connect(account)
     try:
@@ -548,22 +653,44 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
         logging.warning("Toast notification unavailable: %s", type(exc).__name__)
     logging.info("Check completed: %d new messages; %d account errors", len(mails), len(errors))
 
+def is_today_mail(mail: dict, today=None) -> bool:
+    """Return whether a message timestamp falls on the local calendar day."""
+    if today is None:
+        today = datetime.now().astimezone().date()
+    value = mail.get("date")
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return False
+    if not isinstance(value, datetime):
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone().date() == today
+
+
+def today_only(mails: list[dict], today=None) -> list[dict]:
+    return [mail for mail in mails if is_today_mail(mail, today)]
+
+
 def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = False) -> tuple[list[dict], list[str]]:
     all_mails, errors = [], []
+    today = datetime.now().astimezone().date()
     for account in settings["accounts"]:
         if not account.get("enabled") or not account.get("email"):
             continue
         try:
             mails, new_last_uid = check_account(account, state)
             state["last_uid"][account["id"]] = new_last_uid
-            all_mails.extend(mails)
-            logging.info("Account %s checked: %d new messages", account["id"], len(mails))
+            all_mails.extend(today_only(mails, today))
+            logging.info("Account %s checked: %d current-day new messages", account["id"],
+                         sum(1 for mail in mails if is_today_mail(mail, today)))
         except Exception as exc:
             message = f"{account['name']}：{str(exc)}"
             errors.append(message)
             logging.warning("Account %s failed: %s", account["id"], type(exc).__name__)
 
-    # Manual checks queue the metadata for the next scheduled digest instead of consuming it.
     pending = list(state.get("pending_digest", []))
     seen = {(item.get("account_id"), item.get("uid")) for item in pending}
     for mail in all_mails:
@@ -576,7 +703,7 @@ def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = Fal
     save_state(state)
 
     if daily:
-        digest_mails = [_restore_mail(item) for item in pending]
+        digest_mails = today_only([_restore_mail(item) for item in pending], today)
         save_digest(digest_mails, errors)
         if notify:
             send_notification(digest_mails, errors)
@@ -587,6 +714,9 @@ def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = Fal
 
     all_mails.sort(key=lambda m: m["date"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return all_mails, errors
+
+
+
 
 def test_account(account: dict) -> str:
     conn = imap_connect(account)
@@ -694,8 +824,9 @@ class MailBriefingWidget:
                 "mails": initial_pending,
                 "errors": [],
             }
-        self.last_mails = [_restore_mail(item) for item in self.latest_digest.get("mails", [])]
-        self.last_errors = self.latest_digest.get("errors", [])
+        self.last_mails = today_only([_restore_mail(item) for item in self.latest_digest.get("mails", [])])
+        digest_today = str(self.latest_digest.get("generated_at", ""))[:10] == datetime.now().date().isoformat()
+        self.last_errors = self.latest_digest.get("errors", []) if digest_today else []
         self._build()
         self._update_summary()
         self._render_details()
@@ -956,8 +1087,9 @@ class MailBriefingWidget:
 
     def _set_digest(self, digest):
         self.latest_digest = digest if isinstance(digest, dict) else {}
-        self.last_mails = [_restore_mail(item) for item in self.latest_digest.get("mails", [])]
-        self.last_errors = self.latest_digest.get("errors", [])
+        self.last_mails = today_only([_restore_mail(item) for item in self.latest_digest.get("mails", [])])
+        digest_today = str(self.latest_digest.get("generated_at", ""))[:10] == datetime.now().date().isoformat()
+        self.last_errors = self.latest_digest.get("errors", []) if digest_today else []
         self._update_summary()
         self._render_details()
 
@@ -1089,7 +1221,7 @@ class MailBriefingWidget:
                 # Avoid duplicate checks during the same minute if a prior attempt raises.
                 if getattr(self, "_last_attempt_minute", "") != minute_key:
                     self._last_attempt_minute = minute_key
-                    do_check(settings, state, notify=False, daily=True)
+                    do_check(settings, state, notify=True, daily=True)
                     state = load_state()
                     state["last_digest_date"] = now.date().isoformat()
                     save_state(state)
