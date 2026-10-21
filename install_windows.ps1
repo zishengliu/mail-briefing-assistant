@@ -79,6 +79,14 @@ $SettingsShortcut.WorkingDirectory = $InstallDir
 $SettingsShortcut.Description = $DescriptionSettings
 $SettingsShortcut.Save()
 
+# Add a desktop shortcut so daily use never requires opening PowerShell.
+$Desktop = [Environment]::GetFolderPath('Desktop')
+$DesktopShortcut = $Shell.CreateShortcut((Join-Path $Desktop ($AppName + '.lnk')))
+$DesktopShortcut.TargetPath = $WidgetLaunchPath
+$DesktopShortcut.WorkingDirectory = $InstallDir
+$DesktopShortcut.Description = $DescriptionWidget
+$DesktopShortcut.Save()
+
 # Remove the previous shortcut name after the new shortcuts are created.
 $OldShortcutPath = Join-Path $Programs ($OldAppName + '.lnk')
 if (Test-Path -LiteralPath $OldShortcutPath) {
