@@ -30,7 +30,7 @@ except ImportError:
     keyring = None
 
 APP_TITLE = "邮件助手"
-UI_FONT = "PingFang SC" if sys.platform == "darwin" else (UI_FONT if os.name == "nt" else "Noto Sans CJK SC")
+UI_FONT = "PingFang SC" if sys.platform == "darwin" else ("Microsoft YaHei UI" if os.name == "nt" else "Noto Sans CJK SC")
 SERVICE_NAME = "MailBriefingAssistant"
 PROVIDERS = [
     {"id": "gmail", "name": "Gmail", "host": "imap.gmail.com", "port": 993,
@@ -145,18 +145,6 @@ def classify_priority(mail: dict) -> str:
     if any(term.lower() in haystack for term in PRIORITY_TERMS["中"]):
         return "中"
     return "普通"
-
-
-
-
-CATEGORY_ORDER = ["紧急/待处理", "课程与学术", "求职与实习", "账单与账户", "订阅与通知", "个人与其他"]
-RULES = {
-    "紧急/待处理": ["紧急", "尽快", "请处理", "待处理", "待确认", "截止", "逾期", "deadline", "urgent", "action required", "asap", "due today", "approval required", "verify your account"],
-    "课程与学术": ["清华", "北京大学", "课程", "教务", "研究生", "学术", "论文", "讲座", "seminar", "conference", "journal", "submission", "course", "university", "academic", "scholarship", "advisor", "导师", "答辩", "开题"],
-    "求职与实习": ["招聘", "实习", "面试", "录用", "offer", "career", "recruit", "recruitment", "interview", "internship", "job opportunity", "快手", "美团", "简历", "岗位", "hr "],
-    "账单与账户": ["账单", "发票", "付款", "支付", "退款", "订单", "invoice", "payment", "receipt", "billing", "subscription renewal", "bank statement", "密码重置", "password reset", "登录提醒", "security alert"],
-    "订阅与通知": ["unsubscribe", "newsletter", "邮件订阅", "每周摘要", "weekly digest", "no-reply", "noreply", "notification", "通知摘要", "活动邀请", "产品更新", "product update", "digest"],
-}
 
 
 def user_data_dir() -> Path:
