@@ -187,6 +187,7 @@ def default_settings() -> dict:
     providers = [p for p in PROVIDERS if p["id"] in DEFAULT_PROVIDER_IDS]
     return {
         "daily_time": "08:00",
+        "daily_times": ["08:00", "17:00"],
         "accounts": [{
             "id": p["id"], "provider_id": p["id"], "name": p["name"],
             "host": p["host"], "port": p["port"], "url": p["url"],
@@ -210,7 +211,15 @@ def load_settings() -> dict:
     saved = load_json(SETTINGS_PATH, {})
     if not isinstance(saved, dict):
         return result
-    result["daily_time"] = saved.get("daily_time", result["daily_time"])
+    saved_times = saved.get("daily_times")
+    if isinstance(saved_times, list) and saved_times:
+        times = [str(value) for value in saved_times[:2]]
+    else:
+        times = [str(saved.get("daily_time", "08:00")), "17:00"]
+    while len(times) < 2:
+        times.append("17:00")
+    result["daily_times"] = times
+    result["daily_time"] = times[0]
     saved_accounts = {
         str(account.get("id")): account
         for account in saved.get("accounts", [])
@@ -263,6 +272,7 @@ def load_state() -> dict:
     state.setdefault("last_uid", {})
     state.setdefault("last_digest_date", "")
     state.setdefault("pending_digest", [])
+    state.setdefault("completed_slots", [])
     return state
 
 
@@ -785,6 +795,42 @@ def is_today_mail(mail: dict, today=None) -> bool:
 
 def today_only(mails: list[dict], today=None) -> list[dict]:
     return [mail for mail in mails if is_today_mail(mail, today)]
+
+
+def configured_daily_times(settings: dict) -> list[str]:
+    raw = settings.get("daily_times")
+    if not isinstance(raw, list) or not raw:
+        raw = [settings.get("daily_time", "08:00"), "17:00"]
+    values = []
+    for value in raw:
+        try:
+            parsed = datetime.strptime(str(value), "%H:%M")
+            normalized = parsed.strftime("%H:%M")
+        except ValueError:
+            continue
+        if normalized not in values:
+            values.append(normalized)
+    return sorted(values, key=lambda value: datetime.strptime(value, "%H:%M").time()) or ["08:00", "17:00"]
+
+
+def daily_slot_key(day, time_text: str) -> str:
+    day_text = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    return f"{day_text}@{time_text}"
+
+
+def mark_elapsed_slots_covered(state: dict, settings: dict, now=None, grace_minutes: int = 2) -> None:
+    """On app open, let the immediate refresh cover elapsed slots instead of replaying missed reminders."""
+    now = now or datetime.now().astimezone()
+    slots = set(state.get("completed_slots", []))
+    cutoff = now - timedelta(days=7)
+    for time_text in configured_daily_times(settings):
+        due = datetime.combine(now.date(), datetime.strptime(time_text, "%H:%M").time()).replace(tzinfo=now.tzinfo)
+        if now >= due + timedelta(minutes=grace_minutes):
+            slots.add(daily_slot_key(now.date(), time_text))
+    state["completed_slots"] = sorted(
+        key for key in slots
+        if "@" in key and key.split("@", 1)[0] >= cutoff.date().isoformat()
+    )
 
 
 def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = False) -> tuple[list[dict], list[str]]:
