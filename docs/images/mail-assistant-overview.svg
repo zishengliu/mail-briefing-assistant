@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="780" viewBox="0 0 1280 780" role="img" aria-labelledby="title desc">
+<title id="title">邮件助手产品界面示意图</title>
+<desc id="desc">邮件助手桌面悬浮卡片，展示当日邮件总数、各邮箱新邮件数量、刷新按钮和邮件摘要列表。所有邮箱名称与邮件内容仅为示例。</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F1F6FF"/><stop offset=".54" stop-color="#F9FBFF"/><stop offset="1" stop-color="#EEF2FF"/></linearGradient>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5797FF"/><stop offset="1" stop-color="#2855E8"/></linearGradient>
+  <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9A7BFF"/><stop offset="1" stop-color="#6443E8"/></linearGradient>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-color="#244A9A" flood-opacity=".13"/></filter>
+  <filter id="soft" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#344F88" flood-opacity=".08"/></filter>
+</defs>
+<rect width="1280" height="780" rx="28" fill="url(#bg)"/>
+<circle cx="1156" cy="94" r="112" fill="#DCE8FF" opacity=".45"/>
+<circle cx="120" cy="735" r="165" fill="#DDF7EF" opacity=".48"/>
+<path d="M0 610 C240 530 330 740 590 665 S1020 525 1280 620 V780 H0Z" fill="#FFFFFF" opacity=".52"/>
+<!-- Intro -->
+<g transform="translate(64 74)">
+  <rect width="72" height="72" rx="22" fill="url(#blue)"/>
+  <rect x="16" y="22" width="40" height="29" rx="6" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+  <path d="M18 25 L36 39 L54 25" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M53 48 L56 55 L63 58 L56 61 L53 68 L50 61 L43 58 L50 55Z" fill="#C5F8E3"/>
+  <text x="94" y="35" fill="#142B57" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="36" font-weight="700">邮件助手</text>
+  <text x="95" y="64" fill="#64779A" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15">Mail Briefing Assistant</text>
+  <text x="0" y="128" fill="#152B53" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="31" font-weight="700">让重要邮件更容易被看见</text>
+  <text x="0" y="164" fill="#536989" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="17">多邮箱统一查看 · 按自然日统计 · 本地提醒</text>
+  <g transform="translate(0 201)">
+    <rect width="125" height="36" rx="18" fill="#E3EEFF"/>
+    <text x="62.5" y="23" text-anchor="middle" fill="#2457C5" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="600">多邮箱汇总</text>
+    <rect x="137" width="129" height="36" rx="18" fill="#DDF8EC"/>
+    <text x="201.5" y="23" text-anchor="middle" fill="#087A52" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="600">每日邮件统计</text>
+    <rect x="278" width="107" height="36" rx="18" fill="#FFF0D8"/>
+    <text x="331.5" y="23" text-anchor="middle" fill="#A75A06" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="600">优先级提示</text>
+  </g>
+  <g transform="translate(0 263)">
+    <circle cx="10" cy="10" r="10" fill="#DCE8FF"/>
+    <path d="M5 10h10M10 5v10" stroke="#2E5DCE" stroke-width="2" stroke-linecap="round"/>
+    <text x="29" y="15" fill="#344D76" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14">Windows / macOS 桌面应用</text>
+    <circle cx="10" cy="47" r="10" fill="#DDF8EC"/>
+    <path d="M5 47l3 3 6-7" fill="none" stroke="#0B9665" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="29" y="52" fill="#344D76" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14">只读 IMAP，不发送或删除邮件</text>
+    <circle cx="10" cy="84" r="10" fill="#EFE9FF"/>
+    <path d="M10 78v6l4 2" fill="none" stroke="#7859E9" stroke-width="2" stroke-linecap="round"/>
+    <text x="29" y="89" fill="#344D76" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14">默认 08:00、17:00 定时检查</text>
+  </g>
+  <text x="0" y="410" fill="#7A8CAB" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">界面示意图 · 邮箱和邮件内容均为虚构示例</text>
+</g>
+<!-- App window -->
+<g transform="translate(482 42)" filter="url(#shadow)">
+  <rect width="728" height="697" rx="24" fill="#FFFFFF"/>
+  <path d="M24 0H704Q728 0 728 24V66H0V24Q0 0 24 0Z" fill="#F8FAFF"/>
+  <path d="M0 66H728" stroke="#E8EDF7"/>
+  <rect x="20" y="17" width="34" height="34" rx="11" fill="url(#blue)"/>
+  <rect x="29" y="27" width="16" height="12" rx="2.5" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
+  <path d="M30 28l7 6 7-6" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="66" y="39" fill="#1D3155" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="17" font-weight="700">邮件助手</text>
+  <rect x="427" y="15" width="103" height="36" rx="10" fill="#EAF2FF"/>
+  <path d="M443 32a7 7 0 1 1 2 5" fill="none" stroke="#245ED9" stroke-width="2" stroke-linecap="round"/>
+  <path d="M441 34l1-6 5 2" fill="none" stroke="#245ED9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="461" y="37" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="700">刷新</text>
+  <text x="544" y="37" fill="#6D7D98" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">设置</text>
+  <text x="601" y="37" fill="#6D7D98" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">详情 ▾</text>
+  <text x="683" y="37" fill="#6D7D98" font-family="Arial, sans-serif" font-size="17">×</text>
+  <!-- summary -->
+  <rect x="18" y="82" width="692" height="176" rx="16" fill="#F8FAFF" stroke="#E6ECF7"/>
+  <text x="38" y="113" fill="#1A3158" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700">今日新邮件</text>
+  <text x="38" y="157" fill="#214C9F" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="37" font-weight="700">6</text>
+  <text x="69" y="157" fill="#536989" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15">封</text>
+  <rect x="118" y="132" width="138" height="27" rx="13.5" fill="#FFF0D8"/>
+  <circle cx="133" cy="145.5" r="4" fill="#E99927"/>
+  <text x="144" y="150" fill="#9B6109" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="600">高优先级 2 封</text>
+  <text x="38" y="191" fill="#6F809D" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">各邮箱今日邮件</text>
+  <!-- mailbox summary mini cards -->
+  <rect x="38" y="203" width="200" height="40" rx="10" fill="#FFFFFF" stroke="#E5ECF8"/>
+  <rect x="48" y="213" width="21" height="21" rx="6" fill="#EAF2FF"/>
+  <text x="58.5" y="228" text-anchor="middle" fill="#2863DE" font-family="Arial, sans-serif" font-size="12" font-weight="700">G</text>
+  <text x="78" y="228" fill="#3D5275" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">Gmail</text>
+  <text x="224" y="228" text-anchor="end" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">3 封</text>
+  <rect x="250" y="203" width="200" height="40" rx="10" fill="#FFFFFF" stroke="#E5ECF8"/>
+  <rect x="260" y="213" width="21" height="21" rx="6" fill="#DDF8EC"/>
+  <text x="270.5" y="228" text-anchor="middle" fill="#0B9665" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="700">Q</text>
+  <text x="290" y="228" fill="#3D5275" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">QQ 邮箱</text>
+  <text x="436" y="228" text-anchor="end" fill="#0B9665" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">1 封</text>
+  <rect x="462" y="203" width="229" height="40" rx="10" fill="#FFFFFF" stroke="#E5ECF8"/>
+  <rect x="472" y="213" width="21" height="21" rx="6" fill="#FFF0D8"/>
+  <text x="482.5" y="228" text-anchor="middle" fill="#A75A06" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="700">清</text>
+  <text x="502" y="228" fill="#3D5275" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">清华大学邮箱</text>
+  <text x="677" y="228" text-anchor="end" fill="#A75A06" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">2 封</text>
+  <!-- list heading -->
+  <text x="25" y="294" fill="#1A3158" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">新邮件详情</text>
+  <text x="705" y="294" text-anchor="end" fill="#8796AF" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">点击邮件查看正文</text>
+  <!-- mail row 1 -->
+  <g transform="translate(18 312)">
+    <rect width="692" height="107" rx="13" fill="#FFFFFF" stroke="#E7EDF6"/>
+    <rect x="14" y="14" width="34" height="34" rx="10" fill="#FFF0D8"/>
+    <path d="M31 20l3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" fill="#E59A21"/>
+    <text x="60" y="27" fill="#2C4064" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">研究生事务通知</text>
+    <rect x="539" y="14" width="65" height="23" rx="11.5" fill="#FFF0D8"/>
+    <text x="571.5" y="29" text-anchor="middle" fill="#A75A06" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">需尽快处理</text>
+    <text x="669" y="29" text-anchor="end" fill="#8796AF" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">09:20</text>
+    <text x="60" y="52" fill="#607492" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">研究生院 · Gmail</text>
+    <text x="14" y="76" fill="#617591" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">请在规定时间前确认本学期培养环节安排……（示例邮件摘要）</text>
+    <rect x="566" y="67" width="110" height="27" rx="8" fill="#EAF2FF"/>
+    <text x="621" y="84" text-anchor="middle" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">跳转原文 ↗</text>
+  </g>
+  <!-- mail row 2 -->
+  <g transform="translate(18 430)">
+    <rect width="692" height="107" rx="13" fill="#FFFFFF" stroke="#E7EDF6"/>
+    <rect x="14" y="14" width="34" height="34" rx="10" fill="#DDF8EC"/>
+    <path d="M23 23h16v15H23z" fill="none" stroke="#0B9665" stroke-width="1.7"/><path d="M25 20v6m12-6v6M23 28h16" stroke="#0B9665" stroke-width="1.7"/>
+    <text x="60" y="27" fill="#2C4064" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">课程与学术信息</text>
+    <rect x="559" y="14" width="45" height="23" rx="11.5" fill="#DDF8EC"/>
+    <text x="581.5" y="29" text-anchor="middle" fill="#087A52" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">普通</text>
+    <text x="669" y="29" text-anchor="end" fill="#8796AF" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">08:45</text>
+    <text x="60" y="52" fill="#607492" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">课程平台 · 清华大学邮箱</text>
+    <text x="14" y="76" fill="#617591" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">本周课程材料已更新，可按需查看相关资料……（示例邮件摘要）</text>
+    <rect x="566" y="67" width="110" height="27" rx="8" fill="#EAF2FF"/>
+    <text x="621" y="84" text-anchor="middle" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">跳转原文 ↗</text>
+  </g>
+  <!-- mail row 3 -->
+  <g transform="translate(18 548)">
+    <rect width="692" height="107" rx="13" fill="#FFFFFF" stroke="#E7EDF6"/>
+    <rect x="14" y="14" width="34" height="34" rx="10" fill="#EFE9FF"/>
+    <path d="M23 25h16l-8 7Z" fill="none" stroke="#7859E9" stroke-width="1.8" stroke-linejoin="round"/><path d="M23 25v13h16V25" fill="none" stroke="#7859E9" stroke-width="1.8"/>
+    <text x="60" y="27" fill="#2C4064" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">账户安全提示</text>
+    <rect x="559" y="14" width="45" height="23" rx="11.5" fill="#EFE9FF"/>
+    <text x="581.5" y="29" text-anchor="middle" fill="#6443E8" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">中</text>
+    <text x="669" y="29" text-anchor="end" fill="#8796AF" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">08:12</text>
+    <text x="60" y="52" fill="#607492" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">服务通知 · QQ 邮箱</text>
+    <text x="14" y="76" fill="#617591" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">这是用于展示布局的虚构邮件主题与摘要内容。</text>
+    <rect x="566" y="67" width="110" height="27" rx="8" fill="#EAF2FF"/>
+    <text x="621" y="84" text-anchor="middle" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11" font-weight="700">跳转原文 ↗</text>
+  </g>
+  <text x="22" y="680" fill="#8292AD" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="11">本地分类 · 不上传邮件正文 · 示意界面中的数据为虚构样例</text>
+</g>
+</svg>
