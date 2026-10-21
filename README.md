@@ -45,8 +45,9 @@
 
 ### 第一次安装或升级
 
-1. 安装 Python 3.11 或更新版本，并启用 **Add Python to PATH**。
-2. 打开本仓库：<https://github.com/zishengliu/mail-briefing-assistant>，点击 **Code → Download ZIP**，解压。
+1. 如果正在运行旧版邮件助手，请先退出悬浮窗口，避免旧实例继续占用运行锁。
+2. 首次安装时，安装 Python 3.11 或更新版本，并启用 **Add Python to PATH**；如果只是升级且 Python 已可用，不需要重复安装。
+3. 打开本仓库：<https://github.com/zishengliu/mail-briefing-assistant>，点击 **Code → Download ZIP**，解压。
 3. 进入解压后的项目文件夹，在文件资源管理器顶部地址栏输入 `powershell` 并回车。
 4. 在 PowerShell 中逐条运行以下命令：
 
@@ -63,8 +64,9 @@
 ## macOS 安装（macOS 12 或更新版本建议）
 
 1. 安装 Python 3.11 或更新版本。推荐使用 python.org 的 macOS 安装包，并确认它包含 Tcl/Tk 支持（运行 `python3 -c 'import tkinter'` 可检查）。
-2. 从仓库下载 ZIP 并解压。
-3. 打开 Terminal，切换到解压后的项目文件夹。例如解压在 Downloads 时：
+2. 如果正在运行旧版邮件助手，请先退出旧版应用。
+3. 从仓库下载 ZIP 并解压。
+4. 打开 Terminal，切换到解压后的项目文件夹。例如解压在 Downloads 时：
 
    ```bash
    cd ~/Downloads/mail-briefing-assistant-main
