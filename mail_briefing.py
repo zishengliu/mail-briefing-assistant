@@ -1137,8 +1137,9 @@ class MailBriefingWidget:
 
     def _update_summary(self):
         settings = load_settings()
-        due_time = settings.get("daily_time", "08:00")
-        date_today = datetime.now().date().isoformat()
+        due_times = configured_daily_times(settings)
+        due_time = "、".join(due_times)
+        date_today = datetime.now().astimezone().date().isoformat()
         generated = str(self.latest_digest.get("generated_at", ""))
         mail_count = len(self.last_mails)
         if generated[:10] == date_today:
@@ -1714,10 +1715,15 @@ class MailBriefingApp:
 
         timing = ttk.LabelFrame(content, text="每日提醒", padding=8)
         timing.pack(fill="x", pady=(8, 4))
-        ttk.Label(timing, text="通知时间（24 小时制）").grid(row=0, column=0, sticky="w")
-        self.time_var = tk.StringVar(value=self.settings.get("daily_time", "08:00"))
-        ttk.Entry(timing, textvariable=self.time_var, width=10).grid(row=0, column=1, sticky="w", padx=8)
-        ttk.Label(timing, text="例如 08:00。需保持电脑开机、用户登录且助手运行。", foreground="#555").grid(row=0, column=2, sticky="w")
+        daily_times = configured_daily_times(self.settings)
+        ttk.Label(timing, text="上午提醒").grid(row=0, column=0, sticky="w")
+        self.morning_time_var = tk.StringVar(value=daily_times[0] if daily_times else "08:00")
+        ttk.Entry(timing, textvariable=self.morning_time_var, width=10).grid(row=0, column=1, sticky="w", padx=8)
+        ttk.Label(timing, text="下午提醒").grid(row=0, column=2, sticky="w")
+        self.evening_time_var = tk.StringVar(value=daily_times[1] if len(daily_times) > 1 else "17:00")
+        ttk.Entry(timing, textvariable=self.evening_time_var, width=10).grid(row=0, column=3, sticky="w", padx=8)
+        ttk.Label(timing, text="默认 08:00 和 17:00。电脑需开机、用户登录且助手运行；每次打开也会立即检查。",
+                  foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         row = ttk.Frame(content)
         row.pack(fill="x", pady=(8, 0))
@@ -1941,14 +1947,19 @@ class MailBriefingApp:
             self.summary.set("最近一次检查结果会显示在这里。双击邮件可打开对应邮箱。")
 
     def save(self, quiet: bool = False):
-        time_text = self.time_var.get().strip()
+        morning_time = self.morning_time_var.get().strip()
+        evening_time = self.evening_time_var.get().strip()
         try:
-            datetime.strptime(time_text, "%H:%M")
+            datetime.strptime(morning_time, "%H:%M")
+            datetime.strptime(evening_time, "%H:%M")
+            if morning_time == evening_time:
+                raise ValueError
         except ValueError:
-            messagebox.showerror("时间格式错误", "请使用 24 小时制，例如 08:00。")
+            messagebox.showerror("时间格式错误", "请填写两个不同的 24 小时时间，例如 08:00 和 17:00。")
             return False
         settings = load_settings()
-        settings["daily_time"] = time_text
+        settings["daily_times"] = [morning_time, evening_time]
+        settings["daily_time"] = morning_time
         for account in settings["accounts"]:
             aid = account["id"]
             email_addr = self.email_vars[aid].get().strip()
