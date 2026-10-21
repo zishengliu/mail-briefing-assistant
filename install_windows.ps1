@@ -19,7 +19,7 @@ $Script = Join-Path $InstallDir 'mail_briefing.py'
 $Action = New-ScheduledTaskAction -Execute $PythonW -Argument ('"{0}" --background' -f $Script) -WorkingDirectory $InstallDir
 $Trigger = New-ScheduledTaskTrigger -AtLogOn -User ("{0}\{1}" -f $env:USERDOMAIN, $env:USERNAME)
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
-Register-ScheduledTask -TaskName 'MailBriefingAssistant' -Action $Action -Trigger $Trigger -Settings $Settings -Description '本地邮件晨报助手：登录时启动，每天按设置时间汇总邮件。' -Force | Out-Null
+Register-ScheduledTask -TaskName 'MailBriefingAssistant' -Action $Action -Trigger $Trigger -Settings $Settings -Description '本地邮件晨报助手：登录时启动桌面悬浮小插件，每天按设置时间汇总邮件。' -Force | Out-Null
 $Shell = New-Object -ComObject WScript.Shell
 $ShortcutPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\邮件晨报助手.lnk'
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
