@@ -112,7 +112,7 @@ def save_state(state: dict) -> None:
 
 
 def _stored_mail(mail: dict) -> dict:
-    """Keep only the minimum metadata needed to show and notify a daily digest."""
+    """Store only local display metadata and a short body excerpt; never store full mail bodies or attachments."""
     date_value = mail.get("date")
     if isinstance(date_value, datetime):
         date_value = date_value.isoformat()
@@ -124,8 +124,8 @@ def _stored_mail(mail: dict) -> dict:
         "sender": mail.get("sender", "未知发件人"),
         "category": mail.get("category", "个人与其他"),
         "date": date_value,
+        "preview": str(mail.get("preview", "") or "")[:220],
     }
-
 
 def _restore_mail(record: dict) -> dict:
     mail = dict(record)
@@ -322,13 +322,22 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
         return
     counts = {category: sum(1 for mail in mails if mail["category"] == category) for category in CATEGORY_ORDER}
     count_line = " · ".join(f"{name} {count}" for name, count in counts.items() if count)
-    details = [f"{mail['category']}｜{mail['sender']}: {mail['subject']}" for mail in mails[:3]]
-    summary_parts = [part for part in (count_line, "\\n".join(details)) if part]
-    if len(mails) > 3:
-        summary_parts.append(f"另有 {len(mails) - 3} 封，请打开助手查看")
+    details = []
+    for mail in mails[:2]:
+        account_name = mail.get("account_name", "邮箱")
+        sender = mail.get("sender", "未知发件人")
+        subject = mail.get("subject", "（无主题）")
+        preview = str(mail.get("preview", "") or "").strip()
+        line = f"{account_name} · {mail.get('category', '个人与其他')}｜{sender}: {subject}"
+        if preview:
+            line += "\n" + preview[:55]
+        details.append(line)
+    summary_parts = [part for part in (count_line, "\n".join(details)) if part]
+    if len(mails) > 2:
+        summary_parts.append(f"另有 {len(mails) - 2} 封，请打开邮件助手查看")
     if errors:
-        summary_parts.append(f"{len(errors)} 个邮箱检查失败，请打开助手查看")
-    summary = "\\n".join(summary_parts) or "没有发现新邮件"
+        summary_parts.append(f"{len(errors)} 个邮箱检查失败，请打开邮件助手查看")
+    summary = "\n".join(summary_parts) or "没有发现新邮件"
     title = f"{digest_title}：发现 {len(mails)} 封新邮件" if mails else "邮件助手：部分邮箱检查失败"
     try:
         from winotify import Notification
@@ -336,7 +345,6 @@ def send_notification(mails: list[dict], errors: list[str], digest_title: str = 
     except Exception as exc:
         logging.warning("Toast notification unavailable: %s", type(exc).__name__)
     logging.info("Check completed: %d new messages; %d account errors", len(mails), len(errors))
-
 
 def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = False) -> tuple[list[dict], list[str]]:
     all_mails, errors = [], []
@@ -396,17 +404,17 @@ def test_account(account: dict) -> str:
 class MailBriefingWidget:
     """Small always-on-top desktop card with collapsible email details."""
 
-    BG = "#0B1220"
-    PANEL = "#111B2D"
-    ROW = "#18253A"
-    TEXT = "#F4F7FB"
-    MUTED = "#AAB6C8"
-    ACCENT = "#B6FF4A"
-    BORDER = "#29374C"
+    BG = "#F5F7FA"
+    PANEL = "#FFFFFF"
+    ROW = "#FFFFFF"
+    TEXT = "#1F2937"
+    MUTED = "#667085"
+    ACCENT = "#2563EB"
+    BORDER = "#E4E7EC"
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title(APP_TITLE + " · 桌面小插件")
+        self.root.title(APP_TITLE)
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.configure(bg=self.BG)
@@ -453,7 +461,7 @@ class MailBriefingWidget:
         header = tk.Frame(self.card, bg=self.BG)
         header.pack(fill="x", padx=12, pady=(9, 2))
         self.title_label = tk.Label(
-            header, text="✉  邮件助手", bg=self.BG, fg=self.ACCENT,
+            header, text="邮件助手", bg=self.BG, fg=self.TEXT,
             font=("Microsoft YaHei UI", 11, "bold"), cursor="fleur"
         )
         self.title_label.pack(side="left")
@@ -504,8 +512,8 @@ class MailBriefingWidget:
     def _place(self, expanded=None):
         if expanded is None:
             expanded = self.expanded
-        width = 430 if expanded else 355
-        height = 500 if expanded else 94
+        width = 440 if expanded else 360
+        height = 560 if expanded else 104
         self.root.update_idletasks()
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
@@ -547,38 +555,67 @@ class MailBriefingWidget:
         generated = str(self.latest_digest.get("generated_at", ""))
         mail_count = len(self.last_mails)
         if generated[:10] == date_today:
-            text = f"今日晨报：{mail_count} 封新邮件"
+            text = f"今日新邮件 {mail_count} 封  ·  点击详情查看分类与内容"
             if self.last_errors:
-                text += f" · {len(self.last_errors)} 个邮箱需检查"
-            text += "  ·  点击“详情”展开"
+                text += f"\n{len(self.last_errors)} 个邮箱连接需检查"
         else:
             configured = sum(1 for a in settings["accounts"] if a.get("enabled") and a.get("email"))
             if configured:
-                text = f"每天 {due_time} 自动汇总 · 已配置 {configured} 个邮箱"
+                text = f"每天 {due_time} 检查  ·  已连接配置 {configured} 个邮箱"
             else:
-                text = "先点击“设置”配置邮箱 · 支持 Gmail、QQ、清华邮箱"
-        self.summary_label.configure(text=text, wraplength=400 if self.expanded else 325)
+                text = "点击“设置”添加邮箱，支持 Gmail、QQ 邮箱和清华邮箱"
+        self.summary_label.configure(text=text, wraplength=410 if self.expanded else 332)
 
     def _render_details(self):
         for child in self.list_frame.winfo_children():
             child.destroy()
-        counts = {category: sum(1 for mail in self.last_mails if mail.get("category") == category) for category in CATEGORY_ORDER}
+
+        counts = {
+            category: sum(1 for mail in self.last_mails if mail.get("category") == category)
+            for category in CATEGORY_ORDER
+        }
         summary = "  ·  ".join(f"{category} {count}" for category, count in counts.items() if count)
         if summary:
             tk.Label(
-                self.list_frame, text=summary, bg=self.BG, fg=self.ACCENT,
-                font=("Microsoft YaHei UI", 8), justify="left", wraplength=380, anchor="w"
+                self.list_frame, text=summary, bg=self.BG, fg=self.MUTED,
+                font=("Microsoft YaHei UI", 8), justify="left",
+                wraplength=400, anchor="w"
             ).pack(fill="x", padx=3, pady=(0, 8))
-        mails = sorted(self.last_mails, key=lambda mail: mail.get("date") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+        mails = sorted(
+            self.last_mails,
+            key=lambda mail: mail.get("date") or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
         if not mails and not self.last_errors:
             tk.Label(
-                self.list_frame, text="今天暂时没有新邮件。到设定时间后，这里会展示晨报详情。",
+                self.list_frame,
+                text="今天暂时没有新邮件。到设定时间后，这里会展示邮件来源、分类和正文摘要。",
                 bg=self.ROW, fg=self.MUTED, font=("Microsoft YaHei UI", 9),
-                padx=12, pady=15, wraplength=360, justify="left"
+                padx=12, pady=16, wraplength=400, justify="left",
             ).pack(fill="x", padx=2, pady=2)
+
+        category_colors = {
+            "紧急/待处理": "#B42318",
+            "课程与学术": "#175CD3",
+            "求职与实习": "#067647",
+            "账单与账户": "#B54708",
+            "订阅与通知": "#6941C6",
+            "个人与其他": "#667085",
+        }
+        account_colors = {
+            "gmail": ("#EAF2FF", "#1D4ED8"),
+            "qq": ("#E8F7F2", "#067647"),
+            "tsinghua": ("#FFF3E8", "#B54708"),
+        }
+
         for mail in mails[:100]:
-            row = tk.Frame(self.list_frame, bg=self.ROW, highlightthickness=1, highlightbackground=self.BORDER, cursor="hand2")
-            row.pack(fill="x", padx=2, pady=3)
+            row = tk.Frame(
+                self.list_frame, bg=self.ROW, highlightthickness=1,
+                highlightbackground=self.BORDER, cursor="hand2"
+            )
+            row.pack(fill="x", padx=2, pady=4)
+
             date_value = mail.get("date")
             if isinstance(date_value, datetime):
                 date_text = date_value.astimezone().strftime("%m-%d %H:%M")
@@ -586,36 +623,74 @@ class MailBriefingWidget:
                 date_text = str(date_value)[:16]
             else:
                 date_text = "时间未知"
+
             top = tk.Frame(row, bg=self.ROW, cursor="hand2")
-            top.pack(fill="x", padx=9, pady=(7, 2))
-            category_label = tk.Label(
-                top, text=mail.get("category", "个人与其他"), bg=self.ROW, fg=self.ACCENT,
-                font=("Microsoft YaHei UI", 8, "bold"), cursor="hand2"
+            top.pack(fill="x", padx=10, pady=(8, 3))
+
+            account_id = str(mail.get("account_id", ""))
+            badge_bg, badge_fg = account_colors.get(account_id, ("#EEF2F6", "#475467"))
+            account_name = mail.get("account_name") or {
+                "gmail": "Gmail",
+                "qq": "QQ 邮箱",
+                "tsinghua": "清华大学邮箱",
+            }.get(account_id, "其他邮箱")
+            account_label = tk.Label(
+                top, text=account_name, bg=badge_bg, fg=badge_fg,
+                font=("Microsoft YaHei UI", 8, "bold"),
+                padx=6, pady=2, cursor="hand2",
             )
-            category_label.pack(side="left")
-            date_label = tk.Label(top, text=date_text, bg=self.ROW, fg=self.MUTED, font=("Microsoft YaHei UI", 8), cursor="hand2")
+            account_label.pack(side="left")
+
+            category = mail.get("category", "个人与其他")
+            category_label = tk.Label(
+                top, text=category, bg=self.ROW,
+                fg=category_colors.get(category, self.MUTED),
+                font=("Microsoft YaHei UI", 8, "bold"), cursor="hand2",
+            )
+            category_label.pack(side="left", padx=(8, 0))
+
+            date_label = tk.Label(
+                top, text=date_text, bg=self.ROW, fg=self.MUTED,
+                font=("Microsoft YaHei UI", 8), cursor="hand2",
+            )
             date_label.pack(side="right")
+
             sender_label = tk.Label(
                 row, text=mail.get("sender", "未知发件人"), bg=self.ROW, fg=self.MUTED,
-                font=("Microsoft YaHei UI", 8), anchor="w", justify="left", cursor="hand2"
+                font=("Microsoft YaHei UI", 9), anchor="w", justify="left", cursor="hand2",
             )
-            sender_label.pack(fill="x", padx=9)
+            sender_label.pack(fill="x", padx=10, pady=(0, 1))
+
             subject_label = tk.Label(
                 row, text=mail.get("subject", "（无主题）"), bg=self.ROW, fg=self.TEXT,
-                font=("Microsoft YaHei UI", 9, "bold"), anchor="w", justify="left",
-                wraplength=375, cursor="hand2"
+                font=("Microsoft YaHei UI", 10, "bold"), anchor="w", justify="left",
+                wraplength=400, cursor="hand2",
             )
-            subject_label.pack(fill="x", padx=9, pady=(1, 8))
-            open_callback = lambda event, account_id=mail.get("account_id"): self.open_webmail(account_id)
-            for part in (row, top, category_label, date_label, sender_label, subject_label):
+            subject_label.pack(fill="x", padx=10, pady=(1, 3))
+
+            preview = str(mail.get("preview", "") or "").strip()
+            if not preview:
+                preview = "暂无正文摘要；点击此邮件可打开原邮箱查看。"
+            preview_label = tk.Label(
+                row, text=preview, bg=self.ROW, fg="#475467",
+                font=("Microsoft YaHei UI", 9), anchor="w", justify="left",
+                wraplength=400, cursor="hand2",
+            )
+            preview_label.pack(fill="x", padx=10, pady=(0, 9))
+
+            open_callback = lambda event, selected_account=account_id: self.open_webmail(selected_account)
+            for part in (row, top, account_label, category_label, date_label, sender_label, subject_label, preview_label):
                 part.bind("<Button-1>", open_callback)
+
         for error in self.last_errors:
             error_row = tk.Label(
-                self.list_frame, text="⚠ " + error, bg="#3B2025", fg="#FFC2C2",
+                self.list_frame, text="检查提示  ·  " + error,
+                bg="#FEF3F2", fg="#B42318",
                 font=("Microsoft YaHei UI", 8), anchor="w", justify="left",
-                wraplength=375, padx=10, pady=8
+                wraplength=400, padx=10, pady=8,
             )
             error_row.pack(fill="x", padx=2, pady=3)
+
         self.canvas.yview_moveto(0)
 
     def _set_digest(self, digest):
@@ -805,20 +880,57 @@ class MailBriefingApp:
     def build_inbox_tab(self):
         toolbar = ttk.Frame(self.inbox_tab)
         toolbar.pack(fill="x", pady=(0, 6))
-        ttk.Label(toolbar, text="按分类整理新邮件", font=("Microsoft YaHei UI", 11, "bold")).pack(side="left")
+        ttk.Label(toolbar, text="新邮件", font=("Microsoft YaHei UI", 11, "bold")).pack(side="left")
         ttk.Button(toolbar, text="刷新列表", command=self.render_welcome).pack(side="right")
+
         columns = ("category", "account", "sender", "subject", "date")
-        self.tree = ttk.Treeview(self.inbox_tab, columns=columns, show="headings", height=13)
-        headings = {"category": "分类", "account": "邮箱", "sender": "发件人", "subject": "邮件主题", "date": "时间"}
-        widths = {"category": 105, "account": 110, "sender": 140, "subject": 350, "date": 125}
+        self.tree = ttk.Treeview(self.inbox_tab, columns=columns, show="headings", height=11)
+        headings = {
+            "category": "分类", "account": "邮箱来源", "sender": "发件人",
+            "subject": "邮件主题", "date": "时间",
+        }
+        widths = {"category": 105, "account": 115, "sender": 140, "subject": 330, "date": 125}
         for col in columns:
             self.tree.heading(col, text=headings[col])
             self.tree.column(col, width=widths[col], minwidth=75, anchor="w")
         self.tree.pack(fill="both", expand=True)
+        self.tree.bind("<<TreeviewSelect>>", self.show_selected_preview)
         self.tree.bind("<Double-1>", lambda event: self.open_webmail())
+
+        detail = ttk.LabelFrame(self.inbox_tab, text="邮件摘要", padding=9)
+        detail.pack(fill="x", pady=(8, 0))
+        self.preview_var = tk.StringVar(value="选择一封邮件，在这里查看正文摘要。")
+        ttk.Label(
+            detail, textvariable=self.preview_var, justify="left",
+            wraplength=820, anchor="w",
+        ).pack(fill="x")
+
         self.summary = tk.StringVar(value="点击“立即检查新邮件”获取分类摘要。")
         ttk.Label(self.inbox_tab, textvariable=self.summary, wraplength=820, justify="left").pack(fill="x", pady=(8, 0))
         self.recent_mails = []
+
+    def show_selected_preview(self, event=None):
+        selected = self.tree.selection()
+        if not selected:
+            self.preview_var.set("选择一封邮件，在这里查看正文摘要。")
+            return
+        item_ids = list(self.tree.get_children())
+        try:
+            index = item_ids.index(selected[0])
+            mail = self.recent_mails[index]
+        except (ValueError, IndexError):
+            self.preview_var.set("无法读取这封邮件的摘要，请刷新列表。")
+            return
+
+        preview = str(mail.get("preview", "") or "").strip()
+        if not preview:
+            preview = "这封邮件尚无缓存的正文摘要；可双击邮件打开原邮箱查看。"
+        self.preview_var.set(
+            f"邮箱：{mail.get('account_name', '未知邮箱')}    "
+            f"发件人：{mail.get('sender', '未知发件人')}\n"
+            f"主题：{mail.get('subject', '（无主题）')}\n\n"
+            f"正文摘要：{preview}"
+        )
 
     def render_saved_digest(self):
         state = load_state()
@@ -841,6 +953,8 @@ class MailBriefingApp:
         if hasattr(self, "tree"):
             for item in self.tree.get_children():
                 self.tree.delete(item)
+            self.recent_mails = []
+            self.preview_var.set("选择一封邮件，在这里查看正文摘要。")
             self.summary.set("最近一次检查结果会显示在这里。双击邮件可打开对应邮箱。")
 
     def save(self, quiet: bool = False):
@@ -910,17 +1024,30 @@ class MailBriefingApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def show_results(self, mails, errors, title="本次新邮件", warn_errors=True):
-        self.recent_mails = mails
+        self.recent_mails = list(mails)
         for item in self.tree.get_children():
             self.tree.delete(item)
         counts = {c: 0 for c in CATEGORY_ORDER}
-        for mail in mails:
+        for mail in self.recent_mails:
             counts[mail["category"]] = counts.get(mail["category"], 0) + 1
-            date_text = mail["date"].astimezone().strftime("%m-%d %H:%M") if mail["date"] else "未知"
-            self.tree.insert("", "end", values=(mail["category"], mail["account_name"], mail["sender"], mail["subject"], date_text))
+            date_value = mail.get("date")
+            if isinstance(date_value, datetime):
+                date_text = date_value.astimezone().strftime("%m-%d %H:%M")
+            else:
+                date_text = str(date_value)[:16] if date_value else "未知"
+            self.tree.insert("", "end", values=(
+                mail["category"], mail.get("account_name", "未知邮箱"),
+                mail.get("sender", "未知发件人"), mail.get("subject", "（无主题）"), date_text,
+            ))
         self.summary.set(title + "：" + ("；".join(f"{k} {v} 封" for k, v in counts.items() if v) or "0 封") +
                          ("\n检查失败：" + "；".join(errors) if errors else "") +
                          ("\n分类采用本地关键词规则，不会调用外部 AI 服务。"))
+        children = self.tree.get_children()
+        if children:
+            self.tree.selection_set(children[0])
+            self.show_selected_preview()
+        else:
+            self.preview_var.set("没有可显示的邮件摘要。")
         self.status.set(f"检查完成：{len(mails)} 封新邮件，{len(errors)} 个邮箱出错。")
         if errors and warn_errors:
             messagebox.showwarning("部分邮箱检查失败", "\n".join(errors))
