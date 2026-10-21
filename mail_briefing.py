@@ -870,8 +870,15 @@ class MailBriefingWidget:
     def _build(self):
         self.card = tk.Frame(self.root, bg=self.BG, highlightthickness=1, highlightbackground=self.BORDER)
         self.card.pack(fill="both", expand=True)
+        # A thin signature-blue rail adds a recognizable accent without visual clutter.
+        tk.Frame(self.card, bg=self.ACCENT, height=3).pack(fill="x")
         header = tk.Frame(self.card, bg=self.BG)
         header.pack(fill="x", padx=12, pady=(9, 2))
+        self.brand_mark = tk.Label(
+            header, text="●", bg=self.BG, fg=self.ACCENT,
+            font=(UI_FONT, 9, "bold"), cursor="fleur"
+        )
+        self.brand_mark.pack(side="left", padx=(0, 6))
         self.title_label = tk.Label(
             header, text="邮件助手", bg=self.BG, fg=self.TEXT,
             font=(UI_FONT, 11, "bold"), cursor="fleur"
@@ -880,6 +887,9 @@ class MailBriefingWidget:
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
         self.title_label.bind("<ButtonRelease-1>", self._drag_end)
+        self.brand_mark.bind("<ButtonPress-1>", self._drag_start)
+        self.brand_mark.bind("<B1-Motion>", self._drag_move)
+        self.brand_mark.bind("<ButtonRelease-1>", self._drag_end)
         self.expand_button = self._button(header, "详情 ▾", self.toggle_details, accent=True)
         self.expand_button.pack(side="right")
         self.settings_button = self._button(header, "设置", self.open_settings)
@@ -967,7 +977,8 @@ class MailBriefingWidget:
         generated = str(self.latest_digest.get("generated_at", ""))
         mail_count = len(self.last_mails)
         if generated[:10] == date_today:
-            text = f"今日新邮件 {mail_count} 封  ·  点击详情查看分类与内容"
+            high_count = sum(1 for mail in self.last_mails if mail.get("priority") == "高")
+            text = f"今日新邮件 {mail_count} 封  ·  高优先级 {high_count} 封  ·  点击详情"
             if self.last_errors:
                 text += f"\n{len(self.last_errors)} 个邮箱连接需检查"
         else:
