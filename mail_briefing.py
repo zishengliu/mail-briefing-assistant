@@ -697,12 +697,14 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
         title = tk.Label(
             words, text=title_text, bg="#F9FAFB", fg=text,
             font=(UI_FONT, 9, "bold"), anchor="w", justify="left",
+            wraplength=280,
         )
         title.pack(fill="x")
         if subtitle_text:
             subtitle = tk.Label(
                 words, text=subtitle_text, bg="#F9FAFB", fg=muted,
                 font=(UI_FONT, 8), anchor="w", justify="left",
+                wraplength=280,
             )
             subtitle.pack(fill="x", pady=(2, 0))
         else:
@@ -743,7 +745,8 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
         if page == "accounts" and not items:
             visible_height = 88
         else:
-            visible_height = min(max(len(items) * row_height + 8, 66), 228)
+            # Keep the picker compact enough to fit above/below the widget on smaller screens.
+            visible_height = min(max(len(items) * row_height + 8, 66), 210)
 
         canvas = tk.Canvas(
             body_holder, bg=panel, height=visible_height,
@@ -788,6 +791,28 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
                         icon_text="↗",
                     )
 
+        def scroll_popup_list(event):
+            try:
+                if getattr(event, "num", None) == 4:
+                    canvas.yview_scroll(-3, "units")
+                elif getattr(event, "num", None) == 5:
+                    canvas.yview_scroll(3, "units")
+                elif getattr(event, "delta", 0):
+                    steps = max(1, abs(int(event.delta / 120)))
+                    canvas.yview_scroll(-steps * (1 if event.delta > 0 else -1), "units")
+                return "break"
+            except tk.TclError:
+                return "break"
+
+        def bind_scroll_recursively(widget):
+            widget.bind("<MouseWheel>", scroll_popup_list, add="+")
+            widget.bind("<Button-4>", scroll_popup_list, add="+")
+            widget.bind("<Button-5>", scroll_popup_list, add="+")
+            for child in widget.winfo_children():
+                bind_scroll_recursively(child)
+
+        bind_scroll_recursively(canvas)
+        bind_scroll_recursively(inner)
         canvas.update_idletasks()
         if inner.winfo_reqheight() > visible_height:
             scroll.pack(side="right", fill="y")
@@ -832,14 +857,18 @@ def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
     )))
 
     popup.update_idletasks()
-    width = 360
-    height = popup.winfo_reqheight()
+    width = 400
     screen_w = popup.winfo_screenwidth()
     screen_h = popup.winfo_screenheight()
+    height = min(popup.winfo_reqheight(), max(260, screen_h - 16))
     x = min(max(8, anchor.winfo_rootx()), max(8, screen_w - width - 8))
-    y = anchor.winfo_rooty() + anchor.winfo_height() + 4
-    if y + height > screen_h - 8:
-        y = max(8, anchor.winfo_rooty() - height - 4)
+    below_y = anchor.winfo_rooty() + anchor.winfo_height() + 4
+    above_y = anchor.winfo_rooty() - height - 4
+    if below_y + height <= screen_h - 8:
+        y = below_y
+    else:
+        y = above_y
+    y = min(max(8, y), max(8, screen_h - height - 8))
     popup.geometry(f"{width}x{height}+{x}+{y}")
     popup.deiconify()
     popup.lift()
@@ -1091,6 +1120,77 @@ def mark_elapsed_slots_covered(state: dict, settings: dict, now=None, grace_minu
     )
 
 
+def connection_recovery_advice(account: dict, error: Exception | str) -> str:
+    """Return mailbox-specific, actionable recovery steps without exposing credentials."""
+    message = str(error or "").strip()
+    lowered = message.lower()
+    provider_id = str(account.get("provider_id", account.get("id", "")))
+    provider = next((item for item in PROVIDERS if item["id"] == provider_id), None)
+    provider_hint = provider.get("help", "") if provider else (
+        "请向邮箱服务商或管理员核对 IMAP 主机、SSL 端口及客户端授权方式。"
+    )
+
+    if any(term in lowered for term in ("尚未填写邮箱地址", "尚未保存客户端密码", "缺少授权")):
+        action = (
+            "打开「设置」→「邮箱设置」，找到该邮箱并填写完整邮箱地址与客户端密码/授权码；"
+            "点击「测试连接」，成功后保存。若之前保存过，请确认系统凭据库中仍有对应凭据。"
+        )
+    elif any(term in lowered for term in (
+        "authenticationfailed", "authentication failed", "invalid credentials",
+        "login failed", "auth failed", "账号或密码", "密码错误", "not authorized",
+    )):
+        action = (
+            "打开「设置」→「邮箱设置」，检查用户名是否为完整邮箱地址，并重新填写服务商要求的"
+            "客户端专用密码/授权码（不一定是网页登录密码）；确认已开启 IMAP，再点击「测试连接」并保存。"
+            f"服务商提示：{provider_hint}"
+        )
+    elif any(term in lowered for term in (
+        "timed out", "timeout", "timedout", "getaddrinfo", "connection refused",
+        "network is unreachable", "name or service not known", "ssl", "certificate",
+    )):
+        action = (
+            "先确认网络正常、未被防火墙/VPN 拦截；再打开「设置」→「邮箱设置」，核对 IMAP 主机地址、"
+            "SSL 端口（通常为 993）及账号配置，点击「测试连接」。"
+            f"服务商提示：{provider_hint}"
+        )
+    elif any(term in lowered for term in ("无法打开收件箱", "select", "inbox", "imap")):
+        action = (
+            "打开「设置」→「邮箱设置」，确认该邮箱已启用 IMAP、账户有权访问收件箱，"
+            "并核对 IMAP 主机与端口；点击「测试连接」后再保存。"
+            f"服务商提示：{provider_hint}"
+        )
+    else:
+        action = (
+            "打开「设置」→「邮箱设置」，找到该账户，核对邮箱地址、IMAP 主机/端口与客户端密码/授权码，"
+            "然后点击「测试连接」并保存。若仍失败，请保留下方错误信息以便排查。"
+            f"服务商提示：{provider_hint}"
+        )
+    return (
+        f"{account.get('name', '邮箱')}：连接失败（{message or '未知错误'}）\n"
+        f"恢复建议：{action}"
+    )
+
+
+def mailbox_status_labels(mails: list[dict], accounts: list[dict], errors: list[str] | None = None) -> list[str]:
+    """Summarize today's per-mailbox count and clearly distinguish failed checks from zero mail."""
+    errors = errors or []
+    enabled_accounts = [
+        account for account in accounts
+        if account.get("enabled") and account.get("email")
+    ]
+    labels = []
+    for account in enabled_accounts:
+        name = str(account.get("name") or account.get("email") or "邮箱")
+        account_id = str(account.get("id", ""))
+        failed = any(error.startswith(f"{name}：连接失败") for error in errors)
+        if failed:
+            labels.append(f"{name} 连接异常")
+        else:
+            count = sum(1 for mail in mails if str(mail.get("account_id", "")) == account_id)
+            labels.append(f"{name} {count} 封")
+    return labels
+
+
 def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = False) -> tuple[list[dict], list[str]]:
     all_mails, errors = [], []
     today = datetime.now().astimezone().date()
@@ -1104,7 +1204,7 @@ def do_check(settings: dict, state: dict, notify: bool = True, daily: bool = Fal
             logging.info("Account %s checked: %d current-day new messages", account["id"],
                          sum(1 for mail in mails if is_today_mail(mail, today)))
         except Exception as exc:
-            message = f"{account['name']}：{str(exc)}"
+            message = connection_recovery_advice(account, exc)
             errors.append(message)
             logging.warning("Account %s failed: %s", account["id"], type(exc).__name__)
 
@@ -1242,6 +1342,8 @@ class MailBriefingWidget:
         self.drag_origin = None
         self.auto_collapse_job = None
         self._refresh_in_progress = False
+        self._refresh_animation_job = None
+        self._refresh_animation_index = 0
         self._queued_manual_refresh = False
         self._queued_daily_refresh = None
         self._active_daily_slot_keys = set()
@@ -1359,8 +1461,8 @@ class MailBriefingWidget:
     def _place(self, expanded=None):
         if expanded is None:
             expanded = self.expanded
-        width = 440 if expanded else 360
-        height = 560 if expanded else 104
+        width = 460 if expanded else 420
+        height = 560 if expanded else 142
         self.root.update_idletasks()
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
@@ -1402,22 +1504,42 @@ class MailBriefingWidget:
         date_today = datetime.now().astimezone().date().isoformat()
         generated = str(self.latest_digest.get("generated_at", ""))
         mail_count = len(self.last_mails)
-        if generated[:10] == date_today:
+        account_labels = mailbox_status_labels(self.last_mails, settings.get("accounts", []), self.last_errors)
+        show_today = (
+            generated[:10] == date_today or bool(self.last_mails) or bool(self.last_errors)
+            or self._refresh_in_progress
+        )
+        if show_today:
             high_count = sum(1 for mail in self.last_mails if mail.get("priority") == "高")
-            text = f"今日新邮件 {mail_count} 封  ·  高优先级 {high_count} 封  ·  点击详情"
+            text = f"今日新邮件 {mail_count} 封  ·  高优先级 {high_count} 封"
+            if account_labels:
+                text += "\n各邮箱：" + "  ·  ".join(account_labels)
             if self.last_errors:
-                text += f"\n{len(self.last_errors)} 个邮箱连接需检查"
+                text += f"\n{len(self.last_errors)} 个邮箱连接异常；详情中查看恢复方法"
         else:
             configured = sum(1 for a in settings["accounts"] if a.get("enabled") and a.get("email"))
             if configured:
-                text = f"每天 {due_time} 检查  ·  已连接配置 {configured} 个邮箱"
+                text = f"每天 {due_time} 检查  ·  已配置 {configured} 个邮箱"
+                if account_labels:
+                    text += "\n各邮箱：" + "  ·  ".join(account_labels)
             else:
-                text = "点击“设置”添加主流邮箱，或配置自定义 IMAP SSL 服务"
-        self.summary_label.configure(text=text, wraplength=410 if self.expanded else 332)
+                text = "点击“设置”添加邮箱账户"
+        if self._refresh_in_progress:
+            text = "正在连接邮箱并更新今日邮件……\n" + text
+        self.summary_label.configure(text=text, wraplength=430 if self.expanded else 392)
 
     def _render_details(self):
         for child in self.list_frame.winfo_children():
             child.destroy()
+
+        settings = load_settings()
+        mailbox_summary = mailbox_status_labels(self.last_mails, settings.get("accounts", []), self.last_errors)
+        if mailbox_summary:
+            tk.Label(
+                self.list_frame, text="各邮箱今日邮件  ·  " + "  |  ".join(mailbox_summary),
+                bg=self.BG, fg=self.ACCENT, font=(UI_FONT, 9, "bold"),
+                justify="left", wraplength=420, anchor="w",
+            ).pack(fill="x", padx=3, pady=(0, 8))
 
         counts = {
             category: sum(1 for mail in self.last_mails if mail.get("category") == category)
@@ -1559,13 +1681,29 @@ class MailBriefingWidget:
                 part.bind("<Button-1>", open_callback)
 
         for error in self.last_errors:
-            error_row = tk.Label(
-                self.list_frame, text="检查提示  ·  " + error,
-                bg="#FEF3F2", fg="#B42318",
-                font=(UI_FONT, 8), anchor="w", justify="left",
-                wraplength=400, padx=10, pady=8,
+            error_row = tk.Frame(
+                self.list_frame, bg="#FEF3F2", highlightthickness=1,
+                highlightbackground="#FECDCA",
             )
             error_row.pack(fill="x", padx=2, pady=3)
+            tk.Label(
+                error_row, text="连接检查与恢复建议",
+                bg="#FEF3F2", fg="#B42318",
+                font=(UI_FONT, 9, "bold"), anchor="w",
+            ).pack(fill="x", padx=10, pady=(8, 2))
+            tk.Label(
+                error_row, text=error,
+                bg="#FEF3F2", fg="#7A271A",
+                font=(UI_FONT, 8), anchor="w", justify="left",
+                wraplength=400, padx=10, pady=(0, 6),
+            ).pack(fill="x")
+            tk.Button(
+                error_row, text="打开邮箱设置并修复",
+                command=self.open_settings,
+                bg="#FFFFFF", fg="#B42318", activebackground="#FFF1F0",
+                relief="flat", borderwidth=0, cursor="hand2",
+                font=(UI_FONT, 8, "bold"), padx=8, pady=4,
+            ).pack(anchor="e", padx=8, pady=(0, 8))
 
         self.canvas.yview_moveto(0)
 
@@ -1726,6 +1864,45 @@ class MailBriefingWidget:
         except tk.TclError:
             pass
 
+    def _animate_refresh_button(self):
+        if not self._refresh_in_progress:
+            self._refresh_animation_job = None
+            return
+        frames = ("↻", "⟳", "⟲", "⟳")
+        glyph = frames[self._refresh_animation_index % len(frames)]
+        self._refresh_animation_index += 1
+        try:
+            self.refresh_button.configure(
+                text=f"{glyph} 正在刷新",
+                fg="#1D4ED8", bg="#EAF2FF", cursor="watch",
+            )
+            self._refresh_animation_job = self.root.after(150, self._animate_refresh_button)
+        except tk.TclError:
+            self._refresh_animation_job = None
+
+    def _begin_refresh_animation(self):
+        self._refresh_animation_index = 0
+        if self._refresh_animation_job is not None:
+            try:
+                self.root.after_cancel(self._refresh_animation_job)
+            except tk.TclError:
+                pass
+        self._animate_refresh_button()
+
+    def _end_refresh_animation(self):
+        if self._refresh_animation_job is not None:
+            try:
+                self.root.after_cancel(self._refresh_animation_job)
+            except tk.TclError:
+                pass
+            self._refresh_animation_job = None
+        try:
+            self.refresh_button.configure(
+                text="↻ 刷新", fg=self.ACCENT, bg=self.PANEL, cursor="hand2",
+            )
+        except (tk.TclError, AttributeError):
+            pass
+
     def _start_refresh(self, reason="open", daily=False, slot_keys=None):
         slot_keys = list(slot_keys or [])
         if self._refresh_in_progress:
@@ -1746,8 +1923,8 @@ class MailBriefingWidget:
             return
 
         self._refresh_in_progress = True
+        self._begin_refresh_animation()
         self._update_summary()
-        self.summary_label.configure(text="正在更新今日新邮件……")
 
         def worker():
             error_messages = []
@@ -1782,6 +1959,7 @@ class MailBriefingWidget:
 
             def finish():
                 self._refresh_in_progress = False
+                self._end_refresh_animation()
                 self._active_daily_slot_keys.difference_update(slot_keys)
                 if daily and succeeded:
                     self._pending_signature = tuple()
