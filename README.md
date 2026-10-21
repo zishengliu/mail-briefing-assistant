@@ -32,7 +32,7 @@
 
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
-   .\\install_windows.ps1
+   .\install_windows.ps1
    ```
 
 4. 从桌面或开始菜单打开「邮件助手」，进入「设置」填写邮箱地址与客户端密码/授权码，保存后测试连接。
@@ -98,8 +98,8 @@ macOS 用户请参阅下方的 [macOS 安装](#macos-安装macos-12-或更新版
 1. 如果正在运行旧版邮件助手，请先退出悬浮窗口，避免旧实例继续占用运行锁。
 2. 首次安装时，安装 Python 3.11 或更新版本，并启用 **Add Python to PATH**；如果只是升级且 Python 已可用，不需要重复安装。
 3. 打开本仓库：<https://github.com/zishengliu/mail-briefing-assistant>，点击 **Code → Download ZIP**，解压。
-3. 进入解压后的项目文件夹，在文件资源管理器顶部地址栏输入 `powershell` 并回车。
-4. 在 PowerShell 中逐条运行以下命令：
+4. 进入解压后的项目文件夹，在文件资源管理器顶部地址栏输入 `powershell` 并回车。
+5. 在 PowerShell 中逐条运行以下命令：
 
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
@@ -107,7 +107,7 @@ macOS 用户请参阅下方的 [macOS 安装](#macos-安装macos-12-或更新版
    ```
 
    如果询问是否更改执行策略，输入 `Y`。安装脚本会复制程序、安装依赖、注册登录启动任务，并在开始菜单和桌面创建“邮件助手”快捷方式。
-5. 以后从桌面的 **邮件助手** 图标或开始菜单打开即可。日常使用不需要再打开 PowerShell。
+6. 以后从桌面的 **邮件助手** 图标或开始菜单打开即可。日常使用不需要再打开 PowerShell。
 
 > 升级时请下载最新 ZIP 并重新运行安装脚本。程序会安装到 `%LOCALAPPDATA%\MailBriefingAssistant`，邮箱设置和凭据保存在独立的本机位置，不会因为升级而自动删除。
 
@@ -123,8 +123,8 @@ macOS 用户请参阅下方的 [macOS 安装](#macos-安装macos-12-或更新版
    bash install_macos.sh
    ```
 
-4. 安装脚本会创建虚拟环境、安装依赖，并在 `~/Applications` 创建名为 **邮件助手** 的应用；同时注册登录启动项。
-5. 之后从 `~/Applications` 打开“邮件助手”，或把它拖到 Dock。日常使用不需要再次打开 Terminal。
+5. 安装脚本会创建虚拟环境、安装依赖，并在 `~/Applications` 创建名为 **邮件助手** 的应用；同时注册登录启动项。
+6. 之后从 `~/Applications` 打开“邮件助手”，或把它拖到 Dock。日常使用不需要再次打开 Terminal。
 
 macOS 的数据目录位于 `~/Library/Application Support/MailAssistant`，凭据由 macOS Keychain 管理。若 macOS 阻止应用启动，请确认这是你从自己的源码仓库下载并运行安装脚本生成的应用，再按系统安全提示允许启动。
 
