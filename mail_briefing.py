@@ -577,6 +577,10 @@ def open_mail_in_web(account_id: str, mail: dict | None = None) -> None:
     if url:
         webbrowser.open(url)
     else:
+        messagebox.showinfo(
+            "未设置网页版地址",
+            "这封邮件对应的邮箱尚未配置网页版地址。请在「邮箱设置」中填写该邮箱的登录页面地址后重试。",
+        )
         logging.warning("No webmail URL configured for mailbox %s", account_id)
 
 
@@ -607,6 +611,241 @@ def populate_mailbox_menu(menu: tk.Menu, callback, on_configure=None) -> None:
     if on_configure:
         menu.add_separator()
         menu.add_command(label="邮箱设置…", command=on_configure)
+
+
+def show_mailbox_popup(anchor, callback, on_configure=None) -> None:
+    """Show a mailbox picker styled like the blue-and-white Mail Assistant widget."""
+    settings = load_settings()
+    accounts = [
+        account for account in settings.get("accounts", [])
+        if account.get("enabled") and account.get("email")
+    ]
+    configured_provider_ids = {
+        account.get("provider_id", account.get("id")) for account in accounts
+    }
+    extras = [
+        provider for provider in PROVIDERS
+        if provider["id"] not in configured_provider_ids
+    ]
+
+    bg, panel, text, muted = "#F5F7FA", "#FFFFFF", "#1F2937", "#667085"
+    accent, border, hover = "#2563EB", "#E4E7EC", "#F0F6FF"
+    popup = tk.Toplevel(anchor.winfo_toplevel())
+    popup.withdraw()
+    popup.overrideredirect(True)
+    popup.configure(bg=border)
+    try:
+        popup.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+
+    shell = tk.Frame(popup, bg=panel, highlightthickness=1, highlightbackground=border)
+    shell.pack(fill="both", expand=True)
+    tk.Frame(shell, bg=accent, height=3).pack(fill="x")
+
+    header = tk.Frame(shell, bg=panel)
+    header.pack(fill="x", padx=13, pady=(10, 7))
+    title_box = tk.Frame(header, bg=panel)
+    title_box.pack(side="left", fill="x", expand=True)
+    tk.Label(
+        title_box, text="打开邮箱", bg=panel, fg=text,
+        font=(UI_FONT, 11, "bold"), anchor="w",
+    ).pack(anchor="w")
+    tk.Label(
+        title_box, text="选择账户，进入对应邮箱的网页版", bg=panel, fg=muted,
+        font=(UI_FONT, 8), anchor="w",
+    ).pack(anchor="w", pady=(2, 0))
+    close_button = tk.Label(
+        header, text="×", bg=panel, fg=muted, font=(UI_FONT, 15),
+        padx=5, cursor="hand2",
+    )
+    close_button.pack(side="right", anchor="n")
+    close_button.bind("<Button-1>", lambda event: popup.destroy())
+    close_button.bind("<Enter>", lambda event: close_button.configure(fg=text))
+    close_button.bind("<Leave>", lambda event: close_button.configure(fg=muted))
+
+    tabs = tk.Frame(shell, bg=bg)
+    tabs.pack(fill="x", padx=10, pady=(0, 8))
+    body_holder = tk.Frame(shell, bg=panel)
+    body_holder.pack(fill="x", padx=10)
+    page_buttons = {}
+    page_state = {"value": "accounts" if accounts else "providers"}
+
+    def close_popup():
+        try:
+            if popup.winfo_exists():
+                popup.destroy()
+        except tk.TclError:
+            pass
+
+    def open_account(account_id):
+        close_popup()
+        callback(account_id)
+
+    def add_row(parent, title_text, subtitle_text, command, icon_text="↗"):
+        row = tk.Frame(parent, bg="#F9FAFB", highlightthickness=1,
+                       highlightbackground=border, cursor="hand2")
+        row.pack(fill="x", padx=2, pady=3)
+        icon = tk.Label(
+            row, text=icon_text, bg="#F9FAFB", fg=accent,
+            font=(UI_FONT, 11, "bold"), width=3, cursor="hand2",
+        )
+        icon.pack(side="left", padx=(5, 1), pady=6)
+        words = tk.Frame(row, bg="#F9FAFB")
+        words.pack(side="left", fill="x", expand=True, padx=(2, 4), pady=6)
+        title = tk.Label(
+            words, text=title_text, bg="#F9FAFB", fg=text,
+            font=(UI_FONT, 9, "bold"), anchor="w", justify="left",
+        )
+        title.pack(fill="x")
+        if subtitle_text:
+            subtitle = tk.Label(
+                words, text=subtitle_text, bg="#F9FAFB", fg=muted,
+                font=(UI_FONT, 8), anchor="w", justify="left",
+            )
+            subtitle.pack(fill="x", pady=(2, 0))
+        else:
+            subtitle = None
+
+        widgets = [row, icon, words, title]
+        if subtitle is not None:
+            widgets.append(subtitle)
+
+        def set_background(color):
+            try:
+                row.configure(bg=color)
+                for widget in widgets[1:]:
+                    widget.configure(bg=color)
+            except tk.TclError:
+                pass
+
+        for widget in widgets:
+            widget.bind("<Button-1>", lambda event, action=command: action())
+            widget.bind("<Enter>", lambda event: set_background(hover))
+            widget.bind("<Leave>", lambda event: set_background("#F9FAFB"))
+
+    def select_page(page):
+        page_state["value"] = page
+        for key, button in page_buttons.items():
+            active = key == page
+            button.configure(
+                bg=panel if active else bg,
+                fg=accent if active else muted,
+                relief="solid" if active else "flat",
+                highlightbackground=border if active else bg,
+            )
+        for child in body_holder.winfo_children():
+            child.destroy()
+
+        items = accounts if page == "accounts" else extras
+        row_height = 56 if page == "accounts" else 38
+        if page == "accounts" and not items:
+            visible_height = 88
+        else:
+            visible_height = min(max(len(items) * row_height + 8, 66), 228)
+
+        canvas = tk.Canvas(
+            body_holder, bg=panel, height=visible_height,
+            highlightthickness=0, bd=0,
+        )
+        scroll = tk.Scrollbar(body_holder, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=panel)
+        canvas_window = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(canvas_window, width=event.width))
+
+        if page == "accounts":
+            if not accounts:
+                tk.Label(
+                    inner,
+                    text="尚未配置已启用的邮箱。\n可以先在「其他邮箱网站」中打开网页版，或进入邮箱设置添加账户。",
+                    bg=panel, fg=muted, font=(UI_FONT, 9),
+                    justify="left", wraplength=300, padx=8, pady=16,
+                ).pack(fill="x", anchor="w")
+            else:
+                for account in accounts:
+                    name = account.get("name") or "邮箱账户"
+                    address = account.get("email", "")
+                    add_row(
+                        inner, name, address,
+                        lambda aid=account["id"]: open_account(aid),
+                        icon_text="✉",
+                    )
+        else:
+            if not extras:
+                tk.Label(
+                    inner, text="常见邮箱网站都已在上方配置。", bg=panel,
+                    fg=muted, font=(UI_FONT, 9), padx=8, pady=18,
+                ).pack(fill="x", anchor="w")
+            else:
+                for provider in extras:
+                    add_row(
+                        inner, provider["name"], "打开网页版",
+                        lambda pid=provider["id"]: open_account(pid),
+                        icon_text="↗",
+                    )
+
+        canvas.update_idletasks()
+        if inner.winfo_reqheight() > visible_height:
+            scroll.pack(side="right", fill="y")
+        else:
+            scroll.destroy()
+
+    for key, label in (
+        ("accounts", f"已配置邮箱  {len(accounts)}"),
+        ("providers", "其他邮箱网站"),
+    ):
+        button = tk.Button(
+            tabs, text=label, font=(UI_FONT, 9, "bold"),
+            padx=9, pady=6, cursor="hand2", borderwidth=0,
+            relief="flat", bg=bg, fg=muted, activebackground=panel,
+            activeforeground=accent, highlightthickness=1,
+            highlightbackground=bg,
+            command=lambda page=key: select_page(page),
+        )
+        button.pack(side="left", padx=(0, 6), pady=4)
+        page_buttons[key] = button
+
+    footer = tk.Frame(shell, bg=panel)
+    footer.pack(fill="x", padx=12, pady=(7, 10))
+    tk.Label(
+        footer, text="只打开网页，不会修改或发送邮件",
+        bg=panel, fg="#8291A8", font=(UI_FONT, 8),
+    ).pack(side="left")
+    if on_configure:
+        settings_button = tk.Button(
+            footer, text="邮箱设置", command=lambda: (close_popup(), on_configure()),
+            bg=panel, fg=accent, activebackground=panel, activeforeground=text,
+            relief="flat", borderwidth=0, font=(UI_FONT, 9, "bold"),
+            padx=6, pady=2, cursor="hand2",
+        )
+        settings_button.pack(side="right")
+
+    select_page(page_state["value"])
+    popup.bind("<Escape>", lambda event: close_popup())
+    popup.bind("<FocusOut>", lambda event: popup.after(180, lambda: (
+        close_popup() if popup.winfo_exists() and not str(popup.focus_get() or "").startswith(str(popup))
+        else None
+    )))
+
+    popup.update_idletasks()
+    width = 360
+    height = popup.winfo_reqheight()
+    screen_w = popup.winfo_screenwidth()
+    screen_h = popup.winfo_screenheight()
+    x = min(max(8, anchor.winfo_rootx()), max(8, screen_w - width - 8))
+    y = anchor.winfo_rooty() + anchor.winfo_height() + 4
+    if y + height > screen_h - 8:
+        y = max(8, anchor.winfo_rooty() - height - 4)
+    popup.geometry(f"{width}x{height}+{x}+{y}")
+    popup.deiconify()
+    popup.lift()
+    try:
+        popup.focus_force()
+    except tk.TclError:
+        pass
 
 
 def show_mail_detail(parent, mail: dict, open_webmail_callback=None):
@@ -1086,11 +1325,10 @@ class MailBriefingWidget:
             footer, text="邮件仅在本机分类 · 不上传邮件内容",
             bg=self.BG, fg="#8291A8", font=(UI_FONT, 8)
         ).pack(side="left")
-        self.open_mail_menu = tk.Menu(self.root, tearoff=0)
         self.open_mail_button = tk.Button(
-            footer, text="打开邮箱 ▾", command=lambda: self._popup_mail_menu(
-                self.open_mail_button, self.open_mail_menu, self.open_webmail, self.open_settings
-            ), bg=self.PANEL, fg=self.ACCENT, activebackground=self.PANEL,
+            footer, text="打开邮箱 ▾",
+            command=lambda: show_mailbox_popup(self.open_mail_button, self.open_webmail, self.open_settings),
+            bg=self.PANEL, fg=self.ACCENT, activebackground=self.PANEL,
             activeforeground=self.TEXT, relief="flat", borderwidth=0,
             font=(UI_FONT, 9, "bold"), cursor="hand2", padx=8, pady=3,
         )
@@ -1280,7 +1518,19 @@ class MailBriefingWidget:
                 font=(UI_FONT, 9), anchor="w", justify="left",
                 wraplength=400, cursor="hand2",
             )
-            preview_label.pack(fill="x", padx=10, pady=(0, 9))
+            preview_label.pack(fill="x", padx=10, pady=(0, 5))
+
+            actions = tk.Frame(row, bg=self.ROW)
+            actions.pack(fill="x", padx=10, pady=(0, 8))
+            tk.Button(
+                actions, text="跳转原文 ↗",
+                command=lambda selected_mail=mail: open_mail_in_web(
+                    str(selected_mail.get("account_id", "")), selected_mail
+                ),
+                bg="#EAF2FF", fg="#1D4ED8", activebackground="#D9E8FF",
+                activeforeground="#1D4ED8", relief="flat", borderwidth=0,
+                font=(UI_FONT, 8, "bold"), cursor="hand2", padx=9, pady=3,
+            ).pack(side="right")
 
             open_callback = lambda event, selected_mail=mail: show_mail_detail(self.root, selected_mail, self.open_webmail)
             for part in (row, top, account_label, category_label, priority_label, date_label, sender_label, subject_label, preview_label):
@@ -1356,11 +1606,7 @@ class MailBriefingWidget:
             logging.warning("Could not open settings window: %s", type(exc).__name__)
 
     def _popup_mail_menu(self, button, menu, callback, on_configure=None):
-        populate_mailbox_menu(menu, callback, on_configure)
-        try:
-            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
-        finally:
-            menu.grab_release()
+        show_mailbox_popup(button, callback, on_configure)
 
     def open_webmail(self, account_id=None):
         if account_id:
@@ -1662,10 +1908,9 @@ class MailBriefingApp:
         bottom.pack(fill="x", pady=(10, 0))
         self.status = tk.StringVar(value="请先配置邮箱并保存。")
         ttk.Label(bottom, textvariable=self.status).pack(side="left", fill="x", expand=True)
-        self.open_mail_menu = tk.Menu(self.root, tearoff=0)
         self.open_mail_button = ttk.Button(
             bottom, text="打开邮箱 ▾",
-            command=lambda: self.popup_mail_menu(self.open_mail_button, self.open_mail_menu)
+            command=lambda: show_mailbox_popup(self.open_mail_button, self.open_webmail, self.open_settings)
         )
         self.open_mail_button.pack(side="right", padx=(6, 0))
         ttk.Button(bottom, text="立即检查新邮件", command=self.check_now).pack(side="right")
@@ -2058,12 +2303,8 @@ class MailBriefingApp:
             return
         show_mail_detail(self.root, mail, self.open_webmail)
 
-    def popup_mail_menu(self, button, menu):
-        populate_mailbox_menu(menu, self.open_webmail)
-        try:
-            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
-        finally:
-            menu.grab_release()
+    def popup_mail_menu(self, button, menu=None):
+        show_mailbox_popup(button, self.open_webmail, self.open_settings)
 
     def open_webmail(self, account_id=None):
         if account_id:
