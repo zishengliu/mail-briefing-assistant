@@ -293,6 +293,7 @@ def _stored_mail(mail: dict) -> dict:
         "provider_id": mail.get("provider_id", mail.get("account_id", "")),
         "subject": mail.get("subject", "（无主题）"),
         "sender": mail.get("sender", "未知发件人"),
+        "sender_address": mail.get("sender_address", ""),
         "category": normalize_category(mail.get("category", "其他往来")),
         "priority": mail.get("priority", classify_priority(mail)),
         "date": date_value,
