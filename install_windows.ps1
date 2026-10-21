@@ -1,5 +1,17 @@
 $ErrorActionPreference = 'Stop'
 
+# Use Unicode code points for localized shortcut names so Windows PowerShell 5.1
+# can parse this ASCII-only script even when the file is downloaded without a BOM.
+function ConvertFrom-CodePoints([int[]]$CodePoints) {
+    return -join ($CodePoints | ForEach-Object { [char]$_ })
+}
+
+$AppName = ConvertFrom-CodePoints @(0x90AE, 0x4EF6, 0x52A9, 0x624B)
+$SettingsName = ConvertFrom-CodePoints @(0x8BBE, 0x7F6E)
+$OldAppName = ConvertFrom-CodePoints @(0x90AE, 0x4EF6, 0x6668, 0x62A5, 0x52A9, 0x624B)
+$DescriptionWidget = 'Open the Mail Assistant desktop widget'
+$DescriptionSettings = 'Open Mail Assistant account and schedule settings'
+
 $InstallDir = Join-Path $env:LOCALAPPDATA 'MailBriefingAssistant'
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
@@ -53,25 +65,27 @@ $Shell = New-Object -ComObject WScript.Shell
 $WidgetLaunchPath = Join-Path $InstallDir 'launch_widget.bat'
 $SettingsLaunchPath = Join-Path $InstallDir 'launch.bat'
 
-$WidgetShortcut = $Shell.CreateShortcut((Join-Path $Programs '邮件助手.lnk'))
+$WidgetShortcutPath = Join-Path $Programs ($AppName + '.lnk')
+$WidgetShortcut = $Shell.CreateShortcut($WidgetShortcutPath)
 $WidgetShortcut.TargetPath = $WidgetLaunchPath
 $WidgetShortcut.WorkingDirectory = $InstallDir
-$WidgetShortcut.Description = '打开邮件助手桌面悬浮小插件'
+$WidgetShortcut.Description = $DescriptionWidget
 $WidgetShortcut.Save()
 
-$SettingsShortcut = $Shell.CreateShortcut((Join-Path $Programs '邮件助手 - 设置.lnk'))
+$SettingsShortcutPath = Join-Path $Programs ($AppName + ' - ' + $SettingsName + '.lnk')
+$SettingsShortcut = $Shell.CreateShortcut($SettingsShortcutPath)
 $SettingsShortcut.TargetPath = $SettingsLaunchPath
 $SettingsShortcut.WorkingDirectory = $InstallDir
-$SettingsShortcut.Description = '打开邮件助手的邮箱与定时设置'
+$SettingsShortcut.Description = $DescriptionSettings
 $SettingsShortcut.Save()
 
-# Remove the prior shortcut name after successfully creating the new shortcuts.
-$OldShortcutPath = Join-Path $Programs '邮件晨报助手.lnk'
+# Remove the previous shortcut name after the new shortcuts are created.
+$OldShortcutPath = Join-Path $Programs ($OldAppName + '.lnk')
 if (Test-Path -LiteralPath $OldShortcutPath) {
     Remove-Item -LiteralPath $OldShortcutPath -Force
 }
 
 Write-Host "Installation complete. Program folder: $InstallDir"
-Write-Host '从开始菜单打开“邮件助手”启动桌面悬浮小插件。'
-Write-Host '需要配置邮箱时，打开“邮件助手 - 设置”。'
+Write-Host 'Open Mail Assistant from the Start menu to launch the desktop widget.'
+Write-Host 'Open Mail Assistant - Settings to configure email accounts and schedule.'
 Start-Process -FilePath $WidgetLaunchPath
