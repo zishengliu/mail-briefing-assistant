@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="640" viewBox="0 0 1080 640" role="img" aria-labelledby="title desc">
+<title id="title">邮件助手打开邮箱菜单示意图</title>
+<desc id="desc">邮箱选择弹出面板，展示已配置的 Gmail、QQ 邮箱、清华大学邮箱，滚动条和邮箱设置入口。所有账户均为示例。</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F1F6FF"/><stop offset="1" stop-color="#F7FAFF"/></linearGradient>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5999FF"/><stop offset="1" stop-color="#2457D6"/></linearGradient>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="15" stdDeviation="20" flood-color="#244A9A" flood-opacity=".15"/></filter>
+</defs>
+<rect width="1080" height="640" rx="24" fill="url(#bg)"/>
+<g transform="translate(62 68)">
+  <text x="0" y="0" fill="#172E58" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="30" font-weight="700">打开邮箱，快速切换账户</text>
+  <text x="0" y="35" fill="#63799A" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15">已配置邮箱与其他邮箱网站分区展示，列表可上下滚动</text>
+  <rect x="0" y="68" width="420" height="410" rx="18" fill="#FFFFFF" stroke="#E4EAF5"/>
+  <rect x="0" y="68" width="420" height="4" rx="2" fill="url(#blue)"/>
+  <text x="24" y="108" fill="#1F3154" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="19" font-weight="700">打开邮箱</text>
+  <text x="24" y="132" fill="#7788A4" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">选择账户，进入对应邮箱的网页版</text>
+  <rect x="18" y="151" width="384" height="42" rx="10" fill="#F1F5FB"/>
+  <rect x="21" y="154" width="184" height="36" rx="8" fill="#FFFFFF" stroke="#E1E8F4"/>
+  <text x="113" y="177" text-anchor="middle" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="700">已配置邮箱  3</text>
+  <text x="302" y="177" text-anchor="middle" fill="#7585A0" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">其他邮箱网站</text>
+  <g transform="translate(20 205)">
+    <rect width="380" height="72" rx="10" fill="#F9FBFF" stroke="#E4EBF5"/>
+    <rect x="14" y="17" width="38" height="38" rx="11" fill="#EAF2FF"/>
+    <text x="33" y="41" text-anchor="middle" fill="#245ED9" font-family="Arial, sans-serif" font-size="16" font-weight="700">G</text>
+    <text x="64" y="32" fill="#263B5D" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700">Gmail</text>
+    <text x="64" y="51" fill="#7B8BA5" font-family="Arial, sans-serif" font-size="11">example@gmail.com</text>
+    <path d="M350 30l5 5 10-12" fill="none" stroke="#16A36D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(20 285)">
+    <rect width="380" height="72" rx="10" fill="#F9FBFF" stroke="#E4EBF5"/>
+    <rect x="14" y="17" width="38" height="38" rx="11" fill="#DDF8EC"/>
+    <text x="33" y="41" text-anchor="middle" fill="#07825B" font-family="Arial, sans-serif" font-size="16" font-weight="700">Q</text>
+    <text x="64" y="32" fill="#263B5D" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700">QQ 邮箱</text>
+    <text x="64" y="51" fill="#7B8BA5" font-family="Arial, sans-serif" font-size="11">example@qq.com</text>
+    <path d="M350 30l5 5 10-12" fill="none" stroke="#16A36D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(20 365)">
+    <rect width="380" height="72" rx="10" fill="#F9FBFF" stroke="#E4EBF5"/>
+    <rect x="14" y="17" width="38" height="38" rx="11" fill="#FFF0D8"/>
+    <text x="33" y="41" text-anchor="middle" fill="#AD650A" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">清</text>
+    <text x="64" y="32" fill="#263B5D" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700">清华大学邮箱</text>
+    <text x="64" y="51" fill="#7B8BA5" font-family="Arial, sans-serif" font-size="11">example@tsinghua.edu.cn</text>
+    <path d="M350 30l5 5 10-12" fill="none" stroke="#16A36D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <rect x="390" y="213" width="4" height="178" rx="2" fill="#E5EBF5"/>
+  <rect x="390" y="238" width="4" height="79" rx="2" fill="#9FB4D7"/>
+  <path d="M22 448H398" stroke="#E8EDF6"/>
+  <path d="M28 461l6-6 6 6-6 6Z" fill="#3978E9"/>
+  <text x="47" y="466" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" font-weight="700">邮箱设置</text>
+</g>
+<g transform="translate(570 168)">
+  <rect width="440" height="300" rx="18" fill="#FFFFFF" stroke="#E4EAF5" filter="url(#shadow)"/>
+  <text x="28" y="42" fill="#1E345A" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700">使用小贴士</text>
+  <g transform="translate(28 67)">
+    <circle cx="12" cy="12" r="12" fill="#E2ECFF"/><text x="12" y="16" text-anchor="middle" fill="#245ED9" font-family="Arial, sans-serif" font-size="12" font-weight="700">1</text>
+    <text x="34" y="10" fill="#344C70" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">已配置邮箱</text>
+    <text x="34" y="31" fill="#7788A4" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">点击账户行，直接打开其网页版。</text>
+  </g>
+  <g transform="translate(28 132)">
+    <circle cx="12" cy="12" r="12" fill="#DDF8EC"/><text x="12" y="16" text-anchor="middle" fill="#087A52" font-family="Arial, sans-serif" font-size="12" font-weight="700">2</text>
+    <text x="34" y="10" fill="#344C70" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">其他邮箱网站</text>
+    <text x="34" y="31" fill="#7788A4" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">快速打开常见邮箱，尚未添加也可先访问网页。</text>
+  </g>
+  <g transform="translate(28 197)">
+    <circle cx="12" cy="12" r="12" fill="#FFF0D8"/><text x="12" y="16" text-anchor="middle" fill="#A75A06" font-family="Arial, sans-serif" font-size="12" font-weight="700">3</text>
+    <text x="34" y="10" fill="#344C70" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">邮箱列表可滚动</text>
+    <text x="34" y="31" fill="#7788A4" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">用鼠标滚轮、触控板或右侧滚动条查看其他账户。</text>
+  </g>
+</g>
+<text x="570" y="520" fill="#7A8CAB" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">示意界面 · 展示账户为虚构样例，请用自己的邮箱配置使用</text>
+<g transform="translate(570 550)">
+  <rect width="440" height="60" rx="12" fill="#EAF2FF"/>
+  <text x="22" y="25" fill="#245ED9" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700">隐私提示</text>
+  <text x="22" y="44" fill="#536989" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12">打开网页只会导航到邮箱网站，不会替你发送、删除或移动邮件。</text>
+</g>
+</svg>
