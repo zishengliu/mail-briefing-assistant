@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import subprocess
+import tempfile
 import threading
 import time
 import webbrowser
@@ -1284,8 +1285,38 @@ class MailBriefingWidget:
         except tk.TclError:
             pass
 
+_WIDGET_LOCK_HANDLE = None
+
+
+def acquire_widget_lock():
+    """Prevent duplicate floating widgets when the desktop shortcut is clicked repeatedly."""
+    lock_path = Path(tempfile.gettempdir()) / "mail-assistant-widget.lock"
+    handle = open(lock_path, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return handle
+    except (OSError, BlockingIOError):
+        handle.close()
+        return None
+
+
 def background_loop() -> None:
-    """Run the desktop mini-widget and its local daily scheduler."""
+    """Run one desktop mini-widget and its local daily scheduler."""
+    global _WIDGET_LOCK_HANDLE
+    _WIDGET_LOCK_HANDLE = acquire_widget_lock()
+    if _WIDGET_LOCK_HANDLE is None:
+        logging.info("A Mail Assistant widget is already running; ignoring duplicate launch.")
+        return
     logging.info("Desktop mail widget started")
     root = tk.Tk()
     MailBriefingWidget(root)
