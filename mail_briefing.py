@@ -987,6 +987,7 @@ class MailBriefingWidget:
         self._refresh_in_progress = False
         self._queued_manual_refresh = False
         self._queued_daily_refresh = None
+        self._active_daily_slot_keys = set()
         self.last_mails = []
         self.last_errors = []
         self.latest_digest = load_digest()
@@ -1464,10 +1465,13 @@ class MailBriefingWidget:
                 queued["slot_keys"] = sorted(set(queued["slot_keys"]) | set(slot_keys))
                 queued["reason"] = reason
                 self._queued_daily_refresh = queued
+                self._active_daily_slot_keys.update(slot_keys)
             else:
                 self._queued_manual_refresh = True
             return
 
+        if daily:
+            self._active_daily_slot_keys.update(slot_keys)
         settings = load_settings()
         if not any(account.get("enabled") and account.get("email") for account in settings["accounts"]):
             return
@@ -1509,6 +1513,7 @@ class MailBriefingWidget:
 
             def finish():
                 self._refresh_in_progress = False
+                self._active_daily_slot_keys.difference_update(slot_keys)
                 if daily and succeeded:
                     self._pending_signature = tuple()
                     self.show_digest(load_digest(), auto_collapse=True)
@@ -1558,7 +1563,7 @@ class MailBriefingWidget:
             for time_text in configured_daily_times(settings):
                 due_time = datetime.strptime(time_text, "%H:%M").time()
                 key = daily_slot_key(now.date(), time_text)
-                if now.time() >= due_time and key not in completed:
+                if now.time() >= due_time and key not in completed and key not in self._active_daily_slot_keys:
                     due_slots.append((time_text, key))
             if configured and due_slots:
                 # If the computer slept through multiple slots, one refresh covers the elapsed slots.
@@ -1613,7 +1618,11 @@ def background_loop() -> None:
     global _WIDGET_LOCK_HANDLE
     _WIDGET_LOCK_HANDLE = acquire_widget_lock()
     if _WIDGET_LOCK_HANDLE is None:
-        logging.info("A Mail Assistant widget is already running; ignoring duplicate launch.")
+        logging.info("Widget already running; queueing an immediate refresh request.")
+        try:
+            REFRESH_REQUEST_PATH.write_text(datetime.now().astimezone().isoformat(timespec="seconds"), encoding="utf-8")
+        except OSError:
+            logging.warning("Could not queue refresh request", exc_info=True)
         return
     logging.info("Desktop mail widget started")
     root = tk.Tk()
